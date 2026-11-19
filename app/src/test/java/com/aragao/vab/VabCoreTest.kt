@@ -1,6 +1,7 @@
 package com.aragao.vab
 
 import com.aragao.vab.core.ai.GbnfGrammarBuilder
+import com.aragao.vab.core.ai.PromptBuilder
 import com.aragao.vab.core.buddy.BuddyGenerator
 import com.aragao.vab.core.buddy.BuddyVisualState
 import com.aragao.vab.core.markdown.BoardPatchEngine
@@ -12,13 +13,25 @@ import com.aragao.vab.core.markdown.TicketOperation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
+/**
+ * Suite de Especificacoes Executaveis (STDD — Specification & Test-Driven Development).
+ *
+ * Cada teste documenta e verifica um contrato arquitetural imutavel do VAB:
+ *  - [SPEC-01] Parser e Serializer Markdown bidirecional sem perdas (lossless round-trip)
+ *  - [SPEC-02] Motor de Decisoes (BoardPatchEngine: create, update, complete, ordenacao P1..P3 + Deadline)
+ *  - [SPEC-03] Compilador de Gramatica GBNF Dinamica (Constrained Decoding sem alucinacao de secoes ou IDs)
+ *  - [SPEC-04] Montador de Prompt Contextual (PromptBuilder com calendario relativo de 7 dias e indice enxuto)
+ *  - [SPEC-05] Gerador Procedural Tamagotchi 16x16 (Seed ANDROID_ID imutavel, simetria, contorno 1px e humor P1)
+ */
 class VabCoreTest {
 
     @Test
-    fun `markdown parser and serializer roundtrip preserves sections tickets notes and freeform lines`() {
+    fun `SPEC-01 markdown parser and serializer roundtrip preserves sections tickets notes and freeform lines`() {
         val sampleMd = """
             ## Urgente
 
@@ -50,11 +63,19 @@ class VabCoreTest {
         val reparsed = MarkdownParser.parse(serialized)
         assertEquals(2, reparsed.sections[1].tickets.size)
         assertFalse(reparsed.sections[1].tickets[0].completed)
+        assertEquals(Priority.P2, reparsed.sections[1].tickets[0].priority)
         assertTrue(reparsed.sections[1].tickets[1].completed)
     }
 
     @Test
-    fun `patch engine creates updates completes and sorts by priority and deadline`() {
+    fun `SPEC-01 empty markdown initializes fallback configured sections`() {
+        val board = MarkdownParser.parse("", listOf("Urgente", "Faculdade", "Pessoal"))
+        assertEquals(3, board.sections.size)
+        assertEquals(listOf("Urgente", "Faculdade", "Pessoal"), board.sections.map { it.name })
+    }
+
+    @Test
+    fun `SPEC-02 patch engine creates updates completes and sorts by priority and deadline`() {
         val sections = listOf(
             SectionRuleConfig("Urgente", "Críticos"),
             SectionRuleConfig("Faculdade", "Aulas")
@@ -117,7 +138,31 @@ class VabCoreTest {
     }
 
     @Test
-    fun `dynamic gbnf restricts sections and only exposes update or complete when open tickets exist`() {
+    fun `SPEC-02 patch engine sanitizes invalid deadlines and falls back to default section`() {
+        val sections = listOf(SectionRuleConfig("Geral", "Padrao"))
+        val initial = MarkdownParser.parse("", listOf("Geral"))
+
+        val decision = DecisionPayload(
+            operations = listOf(
+                TicketOperation(
+                    op = "create",
+                    section = "SecaoInexistente",
+                    priority = "P3",
+                    title = "Comprar caderno",
+                    deadline = "sexta-feira", // formato inválido deve virar null sem quebrar
+                    notes = ""
+                )
+            )
+        )
+
+        val outcome = BoardPatchEngine.applyDecision(initial, decision, sections)
+        val ticket = outcome.updatedBoard.sections.first().tickets.single()
+        assertEquals("Comprar caderno", ticket.title)
+        assertNull(ticket.deadline)
+    }
+
+    @Test
+    fun `SPEC-03 dynamic gbnf restricts sections and only exposes update or complete when open tickets exist`() {
         val emptyBoardGbnf = GbnfGrammarBuilder.build(
             sectionNames = listOf("Urgente", "TCC"),
             openTicketIds = emptyList()
@@ -136,13 +181,40 @@ class VabCoreTest {
     }
 
     @Test
-    fun `buddy procedural generator is deterministic symmetric on chill idle and unique per device`() {
+    fun `SPEC-04 prompt builder includes 7-day relative calendar and open ticket index excluding completed items`() {
+        val sections = listOf(
+            SectionRuleConfig("Faculdade", "Disciplinas e provas")
+        )
+        val sysPrompt = PromptBuilder.buildSystemPrompt(
+            sections = sections,
+            userPersonalContext = "Estudante de Computação",
+            today = LocalDate.of(2026, 11, 18)
+        )
+        assertTrue(sysPrompt.contains("2026-11-18"))
+        assertTrue(sysPrompt.contains("2026-11-19"))
+        assertTrue(sysPrompt.contains("Faculdade"))
+
+        val md = """
+            ## Faculdade
+            - [ ] **[P1]** Entregar TP de Compiladores 📅 2026-11-20 <!-- id:t_open -->
+            - [x] **[P2]** Lista antiga concluída <!-- id:t_done -->
+        """.trimIndent()
+        val board = MarkdownParser.parse(md)
+        val userPrompt = PromptBuilder.buildUserPrompt("Já terminei o TP de Compiladores", board)
+
+        assertTrue(userPrompt.contains("t_open"))
+        assertFalse(userPrompt.contains("t_done"))
+    }
+
+    @Test
+    fun `SPEC-05 buddy procedural generator is deterministic symmetric on chill idle and unique per device`() {
         val dnaA1 = BuddyGenerator.generateDna("android-device-abc123")
         val dnaA2 = BuddyGenerator.generateDna("android-device-abc123")
         val dnaB = BuddyGenerator.generateDna("android-device-xyz987")
 
         assertEquals(dnaA1, dnaA2)
         assertNotEquals(dnaA1.seed, dnaB.seed)
+        assertTrue(dnaA1.code.startsWith("VAB-"))
 
         val chillFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.IDLE_CHILL, tick = 0)
         assertEquals(256, chillFrame.size)
@@ -162,6 +234,12 @@ class VabCoreTest {
             tick = 0,
             audioAmplitude = 0.8f
         )
+        val stressedFrame = BuddyGenerator.renderFrame(
+            dnaA1,
+            BuddyVisualState.IDLE_STRESSED_P1,
+            tick = 0
+        )
         assertFalse(chillFrame.contentEquals(listeningFrame))
+        assertFalse(chillFrame.contentEquals(stressedFrame))
     }
 }

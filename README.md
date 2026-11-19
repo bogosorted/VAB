@@ -18,7 +18,8 @@ Cada dispositivo gera, a partir de uma **seed imutável (`ANDROID_ID`)**, um **B
    - [3.5. Quadro Markdown Vivo (`vab_board.md`) & Visão Dupla Sincronizada](#35-quadro-markdown-vivo-vab_boardmd--visão-dupla-sincronizada)
    - [3.6. Fila Resiliente com Snapshots de Desfazer (Undo) & Lazy RAM](#36-fila-resiliente-com-snapshots-de-desfazer-undo--lazy-ram)
 4. [Estrutura do Repositório](#4-estrutura-do-repositório)
-5. [Como Compilar, Testar e Instalar](#5-como-compilar-testar-e-instalar)
+5. [Metodologia STDD (Specification & Test-Driven Development)](#5-metodologia-stdd-specification--test-driven-development)
+6. [Como Compilar, Testar e Instalar](#6-como-compilar-testar-e-instalar)
 
 ---
 
@@ -171,7 +172,26 @@ VAB/
 
 ---
 
-## 5. Como Compilar, Testar e Instalar
+## 5. Metodologia STDD (Specification & Test-Driven Development)
+
+O desenvolvimento do **VAB** segue **STDD (Specification & Test-Driven Development)**: toda regra de negócio, formato de serialização Markdown, compilação de gramática GBNF e geração procedural do Buddy nasce como uma **especificação formal (`SPEC-01` a `SPEC-05`)** verificada continuamente por testes automatizados antes de qualquer alteração no código de produção.
+
+| ID da Spec | Domínio | Contrato Verificado em `VabCoreTest.kt` |
+| :--- | :--- | :--- |
+| **`SPEC-01`** | **Markdown Vivo (`MarkdownParser`)** | *Lossless round-trip* entre `vab_board.md` e `MarkdownBoard`, preservando seções `##`, prioridades `**[P1..P3]**`, datas `📅 YYYY-MM-DD`, notas `>`, comentários `<!-- id -->` e linhas livres do usuário. |
+| **`SPEC-02`** | **Motor de Decisões (`BoardPatchEngine`)** | Operações `create`, `update` e `complete`, sanitização de datas inválidas, fallback seguro de seções, ordenação determinística (`P1` → `P2` → `P3` → Prazo) e gatilho de estresse `P1`. |
+| **`SPEC-03`** | **Constrained Decoding (`GbnfGrammarBuilder`)** | Geração dinâmica da gramática GBNF garantindo `enums` estritos das seções configuradas e bloqueio estrutural de `update`/`complete` quando não há tickets abertos. |
+| **`SPEC-04`** | **Contexto Temporal (`PromptBuilder`)** | Injeção do calendário relativo de 7 dias em PT-BR e índice compacto apenas de tickets abertos (excluindo itens concluídos para economizar contexto do SLM). |
+| **`SPEC-05`** | **Tamagotchi Procedural (`BuddyGenerator`)** | Determinismo bit a bit do `SplitMix64` via `ANDROID_ID`, unicidade entre dispositivos, simetria horizontal `16x16`, contorno automático `1px` e reatividade de frames por estado/voz/estresse `P1`. |
+
+### Fluxo STDD para Novas Features
+1. **Definir/Atualizar a Especificação (`SPEC-XX`)** no documento de arquitetura e criar o teste correspondente em `app/src/test/java/com/aragao/vab/VabCoreTest.kt`.
+2. **Rodar a suíte JVM (`./gradlew testDevSlimDebugUnitTest`)** garantindo falha inicial (*Red*) para o novo comportamento.
+3. **Implementar o código mínimo** até que todas as especificações passem (*Green*) e refatorar mantendo 100% da suíte verde.
+
+---
+
+## 6. Como Compilar, Testar e Instalar
 
 ### 5.1. Pré-requisitos e Submódulos C++
 Clone os motores oficiais `whisper.cpp` e `llama.cpp` na pasta `third_party/` (ou execute o script de setup):
