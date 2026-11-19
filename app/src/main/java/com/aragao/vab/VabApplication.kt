@@ -4,17 +4,25 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.provider.Settings
 import com.aragao.vab.core.ai.ModelManager
+import com.aragao.vab.core.buddy.AppIconManager
 import com.aragao.vab.core.buddy.BuddyDna
 import com.aragao.vab.core.buddy.BuddyGenerator
 import com.aragao.vab.core.markdown.BoardRepository
 import com.aragao.vab.data.queue.QueueDatabase
 import com.aragao.vab.data.queue.QueueOrchestrator
 import com.aragao.vab.data.settings.SettingsRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class VabApplication : Application() {
 
-    lateinit var buddyDna: BuddyDna
-        private set
+    private var defaultDeviceDna: BuddyDna = BuddyGenerator.generateDna("vab-default")
+    private val _buddyDnaFlow = MutableStateFlow(defaultDeviceDna)
+    val buddyDnaFlow: StateFlow<BuddyDna> = _buddyDnaFlow.asStateFlow()
+
+    val buddyDna: BuddyDna
+        get() = _buddyDnaFlow.value
 
     lateinit var settingsRepository: SettingsRepository
         private set
@@ -35,10 +43,10 @@ class VabApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Seed 100% travada e imutável derivada do ANDROID_ID exclusivo deste aparelho
         val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
             ?: "vab-immutable-fallback"
-        buddyDna = BuddyGenerator.generateDna(androidId)
+        defaultDeviceDna = BuddyGenerator.generateDna(androidId)
+        _buddyDnaFlow.value = defaultDeviceDna
 
         settingsRepository = SettingsRepository(this)
         boardRepository = BoardRepository(this, settingsRepository)
@@ -50,5 +58,15 @@ class VabApplication : Application() {
             settingsRepository = settingsRepository,
             modelManager = modelManager
         )
+    }
+
+    fun updateBuddySeed(customSeed: Long?) {
+        val nextDna = if (customSeed != null) {
+            BuddyGenerator.generateDnaFromSeed(customSeed)
+        } else {
+            defaultDeviceDna
+        }
+        _buddyDnaFlow.value = nextDna
+        AppIconManager.syncLauncherAlias(this, nextDna)
     }
 }

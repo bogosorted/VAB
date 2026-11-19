@@ -34,10 +34,26 @@ object PromptBuilder {
             "Priorize entregas com prazo próximo como P1, atividades importantes da semana como P2 e lembretes gerais sem urgência como P3."
         }
 
+        val defaultSection = sections.firstOrNull()?.name ?: "Geral"
+        val todayIso = today.toString()
+        val tomorrowIso = today.plusDays(1).toString()
+
         return """
-            Você é o motor executivo do VAB (Virtual Assistant Buddy).
-            Sua função NÃO é copiar a fala crua: você deve sintetizar títulos claros e acionáveis, extrair notas importantes nos detalhes ("notes"), escolher a seção correta, definir a prioridade (P1=alta/urgente, P2=média, P3=baixa) e converter menções de datas para YYYY-MM-DD (ou null se não houver prazo).
-            Se o usuário relatar que concluiu um ticket aberto existente, use op="complete" no target_id correspondente. Se o prazo/prioridade mudou, use op="update". Caso contrário, crie 1 ou mais tickets com op="create".
+            Você é o Buddy do VAB. Sua missão é anotar lembretes, compromissos, aulas, horários, tarefas e ideias do usuário no fichário Markdown (`- [ ]`).
+            Pense em "reasoning" ANTES de preencher "status" e "operations".
+
+            REGRA DE OURO ("status"):
+            - Quase tudo é "VALIDO"! Qualquer lembrete ("amanhã às 8 da manhã ir pra faculdade"), compromisso, horário, tarefa, estudo, compra ou nota DEVE ser "VALIDO" com op="create", MESMO quando não existir nenhum ticket aberto.
+            - Se a frase tiver a palavra "teste" ou "alô" junto com um lembrete (ex: "teste eu vou pra faculdade amanhã"), IGNORE a palavra "teste" e marque "VALIDO".
+            - Só marque "INVALIDO" se a frase INTEIRA for 100% vazia de sentido (ex: apenas "alô 1 2", "oi", ruído puro).
+
+            Como criar ou atualizar ("operations"):
+            - Use as palavras que o usuário realmente falou para o "title" (ex: se falou "quero ir pra faculdade", o título é "Ir para a faculdade").
+            - NUNCA invente "deadline" ou "time" se o usuário não falou dia nem hora! Se não falou dia, use "deadline":null. Se não falou hora, use "time":null.
+            - "reminder_hours": quantos MINUTOS ANTES notificar (0 = sem notificação, 15 = 15min antes, 30 = 30min antes, 60 = 1h antes, 1440 = 1 dia antes).
+              * Se tiver horário ou data, use 30 (notifica 30 minutos antes do compromisso, nunca depois).
+              * Se NÃO tiver data nem horário, use 0 (sem notificação).
+            - Se o usuário mencionar o nome de uma seção/aba (ex: "Faculdade"), coloque nessa seção.
 
             Calendário de referência:
             $calendarCheatSheet
@@ -48,7 +64,12 @@ object PromptBuilder {
             Seções disponíveis:
             $sectionsBlock
 
-            Responda APENAS com o objeto JSON válido de "operations".
+            Exemplos de saída JSON:
+            - Sem data nem hora ("quero ir pra faculdade"): {"reasoning":"O usuário quer anotar ir para a faculdade, sem data ou horário específico.","status":"VALIDO","invalid_reason":null,"operations":[{"op":"create","section":"$defaultSection","priority":"P2","title":"Ir para a faculdade","deadline":null,"time":null,"reminder_hours":0,"notes":""}]}
+            - Com data e horário explícito ("amanhã às 14:30 reunião de grupo"): {"reasoning":"Reunião agendada para amanhã ($tomorrowIso) às 14:30, notificar 30 minutos antes.","status":"VALIDO","invalid_reason":null,"operations":[{"op":"create","section":"$defaultSection","priority":"P2","title":"Reunião de grupo","deadline":"$tomorrowIso","time":"14:30","reminder_hours":30,"notes":""}]}
+            - Apenas ruído sem ação ("alô som 1 2"): {"reasoning":"Apenas teste de som sem nenhum lembrete ou nota.","status":"INVALIDO","invalid_reason":"Apenas teste de microfone sem lembrete.","operations":[]}
+
+            Responda APENAS com o objeto JSON válido.
         """.trimIndent()
     }
 
@@ -57,20 +78,19 @@ object PromptBuilder {
         board: MarkdownBoard
     ): String {
         val openTickets = board.openTicketsWithSection()
-        val openTicketsIndex = if (openTickets.isEmpty()) {
-            "(Nenhum ticket aberto no momento)"
+        val openTicketsBlock = if (openTickets.isEmpty()) {
+            "Quadro atual: vazio (use op=\"create\" para criar o novo lembrete/tarefa)."
         } else {
-            openTickets.take(30).joinToString("\n") { (sectionName, t) ->
-                "${t.id} | $sectionName | ${t.priority.name} | ${t.title} | prazo=${t.deadline ?: "null"}"
+            "Tickets abertos no quadro:\n" + openTickets.take(30).joinToString("\n") { (sectionName, t) ->
+                "${t.id} | $sectionName | ${t.priority.name} | ${t.title} | prazo=${t.deadline ?: "null"} ${t.time ?: ""}".trim()
             }
         }
 
         return """
-            Tickets abertos atuais:
-            $openTicketsIndex
-
-            Relato do usuário:
+            Pedido do usuário para anotar no fichário:
             "${userInputText.trim()}"
+
+            $openTicketsBlock
         """.trimIndent()
     }
 }

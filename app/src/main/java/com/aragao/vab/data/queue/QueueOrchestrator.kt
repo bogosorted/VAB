@@ -10,8 +10,11 @@ import com.aragao.vab.data.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -19,6 +22,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import java.io.File
+
+data class InvalidInputNotice(
+    val itemId: Long,
+    val inputText: String,
+    val reason: String,
+    val reasoning: String,
+    val timestampMs: Long = System.currentTimeMillis()
+)
 
 class QueueOrchestrator(
     private val queueDao: QueueDao,
@@ -36,6 +47,12 @@ class QueueOrchestrator(
     private val _lastCelebrationTimestamp = MutableStateFlow(0L)
     val lastCelebrationTimestamp: StateFlow<Long> = _lastCelebrationTimestamp.asStateFlow()
 
+    private val _latestInvalidNotice = MutableStateFlow<InvalidInputNotice?>(null)
+    val latestInvalidNotice: StateFlow<InvalidInputNotice?> = _latestInvalidNotice.asStateFlow()
+
+    private val _invalidEvents = MutableSharedFlow<InvalidInputNotice>(extraBufferCapacity = 8)
+    val invalidEvents: SharedFlow<InvalidInputNotice> = _invalidEvents.asSharedFlow()
+
     val allItemsFlow = queueDao.observeAll()
     val activeCountFlow = queueDao.observeActiveCount()
 
@@ -48,6 +65,10 @@ class QueueOrchestrator(
                 }
             }
         }
+    }
+
+    fun dismissInvalidNotice() {
+        _latestInvalidNotice.value = null
     }
 
     fun enqueueAudio(wavFile: File) {
@@ -100,7 +121,9 @@ class QueueOrchestrator(
             queueDao.update(
                 item.copy(
                     status = QueueStatus.PENDING,
-                    errorMessage = null
+                    errorMessage = null,
+                    validationStatus = "",
+                    invalidReason = ""
                 )
             )
             triggerProcessing()
@@ -238,14 +261,43 @@ class QueueOrchestrator(
                             json.decodeFromString<DecisionPayload>(rawJson)
                         }
                         parsed.fold(
-                            onSuccess = { payload ->
+                            onSuccess = { rawPayload ->
+                                val payload = BoardPatchEngine.rescueFalseInvalidIfNeeded(
+                                    userInput = item.contentText,
+                                    decision = rawPayload,
+                                    configuredSections = latestSettings.sections
+                                )
                                 if (boardRepository.isRawEditorLocked.value) {
                                     queueDao.update(item.copy(status = QueueStatus.WAITING_EDITOR))
+                                } else if (!payload.isValidDecision) {
+                                    val reason = payload.invalid_reason?.trim().orEmpty()
+                                        .ifBlank { "Entrada sem tarefa, lembrete ou atualização identificável." }
+                                    queueDao.update(
+                                        item.copy(
+                                            status = QueueStatus.INVALID,
+                                            validationStatus = "INVALIDO",
+                                            reasoningText = payload.reasoning.trim(),
+                                            invalidReason = reason,
+                                            rawDecisionJson = rawJson,
+                                            appliedSummary = "Entrada ignorada (Inválido)",
+                                            errorMessage = null
+                                        )
+                                    )
+                                    val notice = InvalidInputNotice(
+                                        itemId = item.id,
+                                        inputText = item.contentText,
+                                        reason = reason,
+                                        reasoning = payload.reasoning.trim()
+                                    )
+                                    _latestInvalidNotice.value = notice
+                                    _invalidEvents.tryEmit(notice)
+                                    madeProgress = true
                                 } else {
                                     val outcome = BoardPatchEngine.applyDecision(
                                         board = currentBoard,
                                         decision = payload,
-                                        configuredSections = latestSettings.sections
+                                        configuredSections = latestSettings.sections,
+                                        rawUserInput = item.contentText
                                     )
                                     boardRepository.saveBoard(outcome.updatedBoard)
                                     val summary = outcome.appliedDescriptions.joinToString(" • ")
@@ -254,6 +306,9 @@ class QueueOrchestrator(
                                     queueDao.update(
                                         item.copy(
                                             status = QueueStatus.APPLIED,
+                                            validationStatus = "VALIDO",
+                                            reasoningText = payload.reasoning.trim(),
+                                            invalidReason = "",
                                             rawDecisionJson = rawJson,
                                             appliedSummary = summary,
                                             previousMarkdownSnapshot = previousMdSnapshot,

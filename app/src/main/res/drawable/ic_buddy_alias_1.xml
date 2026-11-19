@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="20"
+    android:viewportHeight="20">
+    <path android:fillColor="#FFF7F5F0" android:pathData="M0,0h20v20h-20z" />
+    <!-- Ursinho caramelo pastel -->
+    <path android:fillColor="#FF6B5344" android:pathData="M5,3h2v1h6v-1h2v3h1v7h-1v2h-1v2h-2v-1h-4v1h-2v-2h-1v-2h-1v-7h1z" />
+    <path android:fillColor="#FFF0D2B8" android:pathData="M5,4h2v1h6v-1h2v2h1v6h-1v2h-10v-2h-1v-6h1z" />
+    <path android:fillColor="#FFF2B6C6" android:pathData="M6,5h1v1h-1zM13,5h1v1h-1zM5,9h1v1h-1zM14,9h1v1h-1z" />
+    <!-- Jardineira azul pastel -->
+    <path android:fillColor="#FFB5D4F5" android:pathData="M6,11h8v3h-8zM7,10h1v1h-1zM12,10h1v1h-1z" />
+    <path android:fillColor="#FF2B2930" android:pathData="M7,8h1v2h-1zM12,8h1v2h-1zM9,10h2v1h-2z" />
+</vector>

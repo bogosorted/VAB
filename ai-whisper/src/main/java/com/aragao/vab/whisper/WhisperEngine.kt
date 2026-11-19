@@ -62,12 +62,13 @@ class WhisperEngine {
     ): String = mutex.withLock {
         withContext(Dispatchers.Default) {
             if (ctxPtr == 0L || !wavFile.exists()) return@withContext ""
-            val samples = WavPcmReader.readMono16kFloat(wavFile)
-            if (samples.size < 2400 || WavPcmReader.computeRms(samples) < 0.004f) {
-                // Menos de 150ms ou silêncio absoluto: evita alucinação clássica do Whisper
+            val rawSamples = WavPcmReader.readMono16kFloat(wavFile)
+            val samples = AudioPreProcessor.preprocessForWhisper(rawSamples, 16000)
+            if (samples.isEmpty()) {
+                // Menos de 180ms ou silêncio absoluto: evita alucinação clássica do Whisper
                 return@withContext ""
             }
-            val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+            val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
             WhisperJni.nativeTranscribe(ctxPtr, samples, language, threads).trim()
         }
     }

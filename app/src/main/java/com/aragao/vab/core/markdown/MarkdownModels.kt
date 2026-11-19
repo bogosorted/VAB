@@ -30,6 +30,8 @@ data class Ticket(
     val priority: Priority = Priority.P2,
     val completed: Boolean = false,
     val deadline: String? = null,
+    val time: String? = null,
+    val reminderHours: Int = 0,
     val notes: String = ""
 )
 
@@ -62,8 +64,14 @@ data class MarkdownBoard(
 
 @Serializable
 data class DecisionPayload(
+    val reasoning: String = "",
+    val status: String = "VALIDO",
+    val invalid_reason: String? = null,
     val operations: List<TicketOperation> = emptyList()
-)
+) {
+    val isValidDecision: Boolean
+        get() = !status.trim().equals("INVALIDO", ignoreCase = true)
+}
 
 @Serializable
 data class TicketOperation(
@@ -72,6 +80,8 @@ data class TicketOperation(
     val priority: String? = null,
     val title: String? = null,
     val deadline: String? = null,
+    val time: String? = null,
+    val reminder_hours: Int? = null,
     val notes: String? = null,
     val target_id: String? = null
 )

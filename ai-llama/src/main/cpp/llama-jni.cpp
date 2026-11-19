@@ -151,7 +151,7 @@ Java_com_aragao_vab_llama_LlamaJni_nativeGenerateConstrainedJson(
     const int32_t threads = std::max(1, std::min(static_cast<int32_t>(nThreads), 6));
 
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx = static_cast<uint32_t>(std::max(2048, n_prompt + n_predict + 32));
+    cparams.n_ctx = static_cast<uint32_t>(std::max(3072, n_prompt + n_predict + 64));
     cparams.n_batch = static_cast<uint32_t>(std::max(512, n_prompt));
     cparams.n_ubatch = 512;
     cparams.n_threads = threads;

@@ -59,17 +59,27 @@ Java_com_aragao_vab_whisper_WhisperJni_nativeTranscribe(
 
     const char *lang = env->GetStringUTFChars(jLanguage, nullptr);
 
-    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
     wparams.n_threads = std::max(1, std::min(static_cast<int>(nThreads), 6));
     wparams.language = lang ? lang : "pt";
     wparams.translate = false;
     wparams.no_context = true;
-    wparams.single_segment = false;
+    wparams.no_timestamps = true;
+    wparams.single_segment = (n_samples <= 16000 * 25);
     wparams.print_progress = false;
     wparams.print_realtime = false;
     wparams.print_special = false;
     wparams.print_timestamps = false;
     wparams.suppress_blank = true;
+    wparams.suppress_nst = true;
+    wparams.temperature = 0.0f;
+    wparams.temperature_inc = 0.2f;
+    wparams.entropy_thold = 2.4f;
+    wparams.logprob_thold = -1.0f;
+    wparams.no_speech_thold = 0.6f;
+    wparams.beam_search.beam_size = 5;
+    wparams.initial_prompt = nullptr;
+    wparams.carry_initial_prompt = false;
 
     const int rc = whisper_full(ctx, wparams, pcmf32.data(), static_cast<int>(pcmf32.size()));
     if (lang) {

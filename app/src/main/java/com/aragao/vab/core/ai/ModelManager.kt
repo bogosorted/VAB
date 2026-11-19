@@ -21,7 +21,7 @@ data class ModelRuntimeStatus(
     val slmModelFile: File? = null,
     val whisperLoadedInRam: Boolean = false,
     val slmLoadedInRam: Boolean = false,
-    val statusMessage: String = "Ocioso (RAM liberada)"
+    val statusMessage: String = "Descansando • memória livre"
 )
 
 /**
@@ -32,7 +32,8 @@ class ModelManager(private val context: Context) {
 
     companion object {
         const val DEFAULT_QWEN_FILENAME = "qwen-default.gguf"
-        const val DEFAULT_WHISPER_FILENAME = "whisper-default.bin"
+        const val DEFAULT_WHISPER_ASSET = "whisper-default.bin"
+        const val DEFAULT_WHISPER_FILENAME = "whisper-small-q5_1.bin"
         private const val KEEP_ALIVE_MS = 120_000L // 2 minutos
     }
 
@@ -55,26 +56,28 @@ class ModelManager(private val context: Context) {
             if (f.exists() && f.length() > 0L) return@withContext f
         }
 
-        // 1) Verifica se já foi extraído em filesDir/models/
+        // Remove modelo base antigo (60MB) caso tenha sobrado de versão anterior
+        val legacyBase = File(modelsDir, "whisper-default.bin")
+        if (legacyBase.exists() && legacyBase.length() < 150_000_000L) {
+            runCatching { legacyBase.delete() }
+        }
+
+        // 1) Verifica se o modelo small atualizado já foi extraído em filesDir/models/
         val internalFile = File(modelsDir, DEFAULT_WHISPER_FILENAME)
-        if (internalFile.exists() && internalFile.length() > 0L) {
+        if (internalFile.exists() && internalFile.length() > 150_000_000L) {
             return@withContext internalFile
         }
 
         // 2) Tenta extrair dos assets do APK (flavor demoBundled)
-        if (extractAssetIfPresent("models/$DEFAULT_WHISPER_FILENAME", internalFile)) {
+        _runtimeStatus.value = _runtimeStatus.value.copy(
+            statusMessage = "Preparando voz offline (1ª vez)..."
+        )
+        if (extractAssetIfPresent("models/$DEFAULT_WHISPER_ASSET", internalFile)) {
             return@withContext internalFile
         }
 
-        // 3) Fallback devSlim: procura em /sdcard/Download/vab-models/
-        val externalDownloads = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "vab-models"
-        )
-        val candidates = externalDownloads.listFiles { file ->
-            file.isFile && file.name.endsWith(".bin", ignoreCase = true)
-        }
-        candidates?.firstOrNull()
+        // 3) Fallback devSlim: procura em pastas acessíveis do aparelho
+        findExternalModelFile(".bin")
     }
 
     suspend fun resolveSlmModel(customPath: String?): File? = withContext(Dispatchers.IO) {
@@ -88,26 +91,46 @@ class ModelManager(private val context: Context) {
             return@withContext internalFile
         }
 
+        _runtimeStatus.value = _runtimeStatus.value.copy(
+            statusMessage = "Preparando cérebro offline (1ª vez)..."
+        )
         if (extractAssetIfPresent("models/$DEFAULT_QWEN_FILENAME", internalFile)) {
             return@withContext internalFile
         }
 
-        val externalDownloads = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "vab-models"
+        findExternalModelFile(".gguf")
+    }
+
+    private fun findExternalModelFile(extension: String): File? {
+        val searchDirs = listOfNotNull(
+            context.getExternalFilesDir("models"),
+            context.getExternalFilesDir(null),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "vab-models"),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         )
-        val candidates = externalDownloads.listFiles { file ->
-            file.isFile && file.name.endsWith(".gguf", ignoreCase = true)
+        for (dir in searchDirs) {
+            val found = runCatching {
+                dir.listFiles { file ->
+                    file.isFile && file.length() > 1024L && file.name.endsWith(extension, ignoreCase = true)
+                }?.firstOrNull()
+            }.getOrNull()
+            if (found != null) return found
         }
-        candidates?.firstOrNull()
+        return null
     }
 
     suspend fun refreshDetectedModels(customWhisperPath: String?, customSlmPath: String?) {
         val w = resolveWhisperModel(customWhisperPath)
         val s = resolveSlmModel(customSlmPath)
+        val msg = if (w != null && s != null) {
+            "Pronto • memória livre"
+        } else {
+            "Faltando modelo offline — importe na aba Buddy"
+        }
         _runtimeStatus.value = _runtimeStatus.value.copy(
             whisperModelFile = w,
-            slmModelFile = s
+            slmModelFile = s,
+            statusMessage = msg
         )
     }
 
@@ -122,13 +145,13 @@ class ModelManager(private val context: Context) {
         }
 
         val modelFile = resolveWhisperModel(customWhisperPath)
-            ?: return Result.failure(IllegalStateException("Modelo Whisper (.bin) não encontrado. Coloque em Download/vab-models ou use o APK demoBundled."))
+            ?: return Result.failure(IllegalStateException("Modelo de voz (.bin) não encontrado. Importe na aba Buddy ou instale o APK completo."))
 
         _runtimeStatus.value = _runtimeStatus.value.copy(
             whisperModelFile = modelFile,
             whisperLoadedInRam = true,
             slmLoadedInRam = false,
-            statusMessage = "Transcrevendo voz com Whisper local..."
+            statusMessage = "Ouvindo seu áudio..."
         )
 
         if (!whisperEngine.ensureLoaded(modelFile)) {
@@ -162,13 +185,13 @@ class ModelManager(private val context: Context) {
         }
 
         val modelFile = resolveSlmModel(customSlmPath)
-            ?: return Result.failure(IllegalStateException("Modelo Qwen (.gguf) não encontrado. Coloque em Download/vab-models ou selecione nas Configurações."))
+            ?: return Result.failure(IllegalStateException("Modelo de IA (.gguf) não encontrado. Importe na aba Buddy ou instale o APK completo."))
 
         _runtimeStatus.value = _runtimeStatus.value.copy(
             slmModelFile = modelFile,
             whisperLoadedInRam = false,
             slmLoadedInRam = true,
-            statusMessage = "Analisando prioridades no Qwen + GBNF..."
+            statusMessage = "Pensando e organizando no fichário..."
         )
 
         if (!llamaEngine.ensureLoaded(modelFile)) {
@@ -183,8 +206,8 @@ class ModelManager(private val context: Context) {
             systemPrompt = systemPrompt,
             userPrompt = userPrompt,
             gbnfGrammar = gbnfGrammar,
-            maxTokens = 480,
-            temperature = 0.1f
+            maxTokens = 768,
+            temperature = 0.12f
         )
 
         scheduleKeepAliveUnload()
@@ -199,7 +222,7 @@ class ModelManager(private val context: Context) {
         _runtimeStatus.value = _runtimeStatus.value.copy(
             slmLoadedInRam = llamaEngine.isLoaded,
             whisperLoadedInRam = false,
-            statusMessage = "Qwen em espera (libera RAM em 2 min)"
+            statusMessage = "Acordado • libera memória em 2 min"
         )
         keepAliveJob?.cancel()
         keepAliveJob = scope.launch {
@@ -209,7 +232,7 @@ class ModelManager(private val context: Context) {
             _runtimeStatus.value = _runtimeStatus.value.copy(
                 whisperLoadedInRam = false,
                 slmLoadedInRam = false,
-                statusMessage = "Ocioso (RAM liberada)"
+                statusMessage = "Descansando • memória livre"
             )
         }
     }
@@ -221,7 +244,7 @@ class ModelManager(private val context: Context) {
         _runtimeStatus.value = _runtimeStatus.value.copy(
             whisperLoadedInRam = false,
             slmLoadedInRam = false,
-            statusMessage = "Ocioso (RAM liberada)"
+            statusMessage = "Descansando • memória livre"
         )
     }
 

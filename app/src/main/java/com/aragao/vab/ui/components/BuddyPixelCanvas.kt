@@ -26,8 +26,13 @@ fun BuddyPixelCanvas(
     var tick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(state) {
+        val isFastState = state == BuddyVisualState.LISTENING ||
+            state == BuddyVisualState.NOTING ||
+            state == BuddyVisualState.ORGANIZING ||
+            state == BuddyVisualState.THINKING ||
+            state == BuddyVisualState.CELEBRATING
         while (true) {
-            delay(if (state == BuddyVisualState.LISTENING) 120L else 300L)
+            delay(if (isFastState) 140L else 680L)
             tick++
         }
     }

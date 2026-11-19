@@ -10,6 +10,7 @@ import com.aragao.vab.core.markdown.MarkdownParser
 import com.aragao.vab.core.markdown.Priority
 import com.aragao.vab.core.markdown.SectionRuleConfig
 import com.aragao.vab.core.markdown.TicketOperation
+import com.aragao.vab.whisper.AudioPreProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -17,6 +18,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import kotlin.math.abs
+import kotlin.math.sin
 
 /**
  * Suite de Especificacoes Executaveis (STDD — Specification & Test-Driven Development).
@@ -178,6 +181,83 @@ class VabCoreTest {
         assertTrue(populatedGbnf.contains("operation ::= create-op | update-op | complete-op"))
         assertTrue(populatedGbnf.contains("t_01"))
         assertTrue(populatedGbnf.contains("t_02"))
+        assertTrue(populatedGbnf.contains("reasoning-str"))
+        assertTrue(populatedGbnf.contains("valid-body"))
+        assertTrue(populatedGbnf.contains("invalid-body"))
+        assertTrue(populatedGbnf.contains("VALIDO"))
+        assertTrue(populatedGbnf.contains("INVALIDO"))
+        assertTrue(populatedGbnf.contains("reminder_hours"))
+        assertTrue(populatedGbnf.contains("reminder-val"))
+    }
+
+    @Test
+    fun `SPEC-02 patch engine ignores board edits when decision status is INVALIDO`() {
+        val sections = listOf(SectionRuleConfig("Geral", "Padrao"))
+        val initial = MarkdownParser.parse("", listOf("Geral"))
+        val invalidPayload = DecisionPayload(
+            reasoning = "Texto é apenas teste de áudio sem tarefa.",
+            status = "INVALIDO",
+            invalid_reason = "Nenhuma pendência detectada",
+            operations = listOf(
+                TicketOperation(op = "create", section = "Geral", priority = "P1", title = "Nao criar")
+            )
+        )
+        assertFalse(invalidPayload.isValidDecision)
+        val outcome = BoardPatchEngine.applyDecision(initial, invalidPayload, sections)
+        assertTrue(outcome.appliedDescriptions.isEmpty())
+        assertTrue(outcome.updatedBoard.sections.first().tickets.isEmpty())
+
+        // Porém, se o modelo 0.5B marcar erroneamente como INVALIDO um lembrete real
+        // ("Amanhã às 8 da manhã ir pra faculdade"), o rescueFalseInvalidIfNeeded resgata em - [ ] com data e hora!
+        val falseInvalidFromSmallModel = DecisionPayload(
+            reasoning = "Sem ticket aberto.",
+            status = "INVALIDO",
+            invalid_reason = "Sem tarefa ou ticket aberto",
+            operations = emptyList()
+        )
+        val rescued = BoardPatchEngine.rescueFalseInvalidIfNeeded(
+            userInput = "Amanhã às 8 da manhã ir pra faculdade",
+            decision = falseInvalidFromSmallModel,
+            configuredSections = sections,
+            today = LocalDate.of(2026, 11, 18)
+        )
+        assertTrue(rescued.isValidDecision)
+        val rescuedOutcome = BoardPatchEngine.applyDecision(initial, rescued, sections)
+        val rescuedTicket = rescuedOutcome.updatedBoard.sections.first().tickets.single()
+        assertEquals("Ir pra faculdade", rescuedTicket.title)
+        assertEquals("2026-11-19", rescuedTicket.deadline)
+        assertEquals("08:00", rescuedTicket.time)
+        // Notifica 30 minutos antes (e não de 2 em 2 horas)
+        assertEquals(30, rescuedTicket.reminderHours)
+
+        // E se o usuário falar apenas "quero ir pra faculdade" (sem horário nem data) e o Qwen 0.5B tentar
+        // alucinar "08:00", o BoardPatchEngine bloqueia a alucinação de horário/data!
+        val hallucinatedTimeDecision = DecisionPayload(
+            reasoning = "Ir para a faculdade",
+            status = "VALIDO",
+            operations = listOf(
+                TicketOperation(
+                    op = "create",
+                    section = "Geral",
+                    priority = "P2",
+                    title = "Ir para a faculdade",
+                    deadline = "2026-11-19",
+                    time = "08:00",
+                    reminder_hours = 30
+                )
+            )
+        )
+        val cleanOutcome = BoardPatchEngine.applyDecision(
+            board = initial,
+            decision = hallucinatedTimeDecision,
+            configuredSections = sections,
+            rawUserInput = "quero ir pra faculdade",
+            today = LocalDate.of(2026, 11, 18)
+        )
+        val cleanTicket = cleanOutcome.updatedBoard.sections.first().tickets.single()
+        assertNull("Não deve inventar data quando o usuário não falou data", cleanTicket.deadline)
+        assertNull("Não deve inventar horário 08:00 quando o usuário não falou horário", cleanTicket.time)
+        assertEquals("Sem data/horário não deve ter notificação", 0, cleanTicket.reminderHours)
     }
 
     @Test
@@ -193,6 +273,9 @@ class VabCoreTest {
         assertTrue(sysPrompt.contains("2026-11-18"))
         assertTrue(sysPrompt.contains("2026-11-19"))
         assertTrue(sysPrompt.contains("Faculdade"))
+        assertTrue(sysPrompt.contains("VALIDO"))
+        assertTrue(sysPrompt.contains("INVALIDO"))
+        assertTrue(sysPrompt.contains("reasoning"))
 
         val md = """
             ## Faculdade
@@ -217,13 +300,15 @@ class VabCoreTest {
         assertTrue(dnaA1.code.startsWith("VAB-"))
 
         val chillFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.IDLE_CHILL, tick = 0)
-        assertEquals(256, chillFrame.size)
+        val grid = BuddyGenerator.GRID_SIZE
+        assertEquals(16, grid)
+        assertEquals(grid * grid, chillFrame.size)
 
         // Verifica simetria horizontal do sprite 16x16 no estado IDLE_CHILL
-        for (y in 0 until BuddyGenerator.GRID_SIZE) {
-            for (x in 0 until BuddyGenerator.GRID_SIZE / 2) {
-                val left = chillFrame[y * 16 + x]
-                val right = chillFrame[y * 16 + (15 - x)]
+        for (y in 0 until grid) {
+            for (x in 0 until grid / 2) {
+                val left = chillFrame[y * grid + x]
+                val right = chillFrame[y * grid + (grid - 1 - x)]
                 assertEquals("Pixel assimétrico em ($x, $y)", left, right)
             }
         }
@@ -239,7 +324,41 @@ class VabCoreTest {
             BuddyVisualState.IDLE_STRESSED_P1,
             tick = 0
         )
+        val notingFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.NOTING, tick = 1)
+        val organizingFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.ORGANIZING, tick = 1)
+        val curiousFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.IDLE_CURIOUS, tick = 1)
+        val playfulFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.IDLE_PLAYFUL, tick = 1)
+        val sleepyFrame = BuddyGenerator.renderFrame(dnaA1, BuddyVisualState.IDLE_SLEEPY, tick = 1)
+
         assertFalse(chillFrame.contentEquals(listeningFrame))
         assertFalse(chillFrame.contentEquals(stressedFrame))
+        assertFalse(chillFrame.contentEquals(notingFrame))
+        assertFalse(chillFrame.contentEquals(organizingFrame))
+        assertFalse(notingFrame.contentEquals(organizingFrame))
+        assertFalse(curiousFrame.contentEquals(sleepyFrame))
+        assertFalse(playfulFrame.contentEquals(sleepyFrame))
+    }
+
+    @Test
+    fun `SPEC-06 audio preprocessor removes silence normalizes quiet speech and drops pure noise`() {
+        val pureSilence = FloatArray(16000) { 0.0005f }
+        assertTrue(AudioPreProcessor.preprocessForWhisper(pureSilence).isEmpty())
+
+        val tooShort = FloatArray(800) { 0.2f }
+        assertTrue(AudioPreProcessor.preprocessForWhisper(tooShort).isEmpty())
+
+        // 1s silêncio + 0.5s fala baixa com DC offset + 1s silêncio
+        val raw = FloatArray(40000) { idx ->
+            val dc = 0.03f
+            if (idx in 16000 until 24000) {
+                dc + 0.04f * sin(2.0 * Math.PI * 220.0 * idx / 16000.0).toFloat()
+            } else {
+                dc
+            }
+        }
+        val processed = AudioPreProcessor.preprocessForWhisper(raw, 16000)
+        assertTrue("Áudio recortado deve ser menor que o original", processed.size in 8000..17000)
+        val maxPeak = processed.maxOf { abs(it) }
+        assertTrue("Fala baixa deve ser normalizada para perto de 0.75 (atual=$maxPeak)", maxPeak > 0.35f)
     }
 }

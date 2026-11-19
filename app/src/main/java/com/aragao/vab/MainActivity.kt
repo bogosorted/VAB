@@ -2,22 +2,30 @@ package com.aragao.vab
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -31,21 +39,34 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aragao.vab.core.buddy.AppIconManager
 import com.aragao.vab.core.buddy.BuddyVisualState
 import com.aragao.vab.ui.VabViewModel
 import com.aragao.vab.ui.screens.BoardScreen
 import com.aragao.vab.ui.screens.QueueScreen
 import com.aragao.vab.ui.screens.SettingsScreen
+import com.aragao.vab.ui.theme.VabPalette
 import com.aragao.vab.ui.theme.VabTheme
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                Color.parseColor("#FFF7F5F0"),
+                Color.parseColor("#FFE2E0D8")
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                Color.parseColor("#FFFFFFFF"),
+                Color.parseColor("#FFE2E0D8")
+            )
+        )
 
         setContent {
             VabTheme {
@@ -90,6 +111,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val buddyDna by vm.buddyDnaFlow.collectAsState()
+                LaunchedEffect(buddyDna) {
+                    AppIconManager.updateActivityTaskDescription(this@MainActivity, buddyDna)
+                }
                 val board by vm.boardFlow.collectAsState()
                 val rawMd by vm.rawMarkdownFlow.collectAsState()
                 val queueItems by vm.queueItemsFlow.collectAsState()
@@ -97,9 +122,11 @@ class MainActivity : ComponentActivity() {
                 val settings by vm.settingsFlow.collectAsState()
                 val modelStatus by vm.modelStatusFlow.collectAsState()
                 val isRecordingVoice by vm.isRecordingInApp.collectAsState()
+                val isTypingInApp by vm.isTypingInApp.collectAsState()
                 val voiceAmplitude by vm.inAppAmplitude.collectAsState()
                 val celebrationTs by vm.celebrationTimestampFlow.collectAsState()
                 val importingModel by vm.importingModel.collectAsState()
+                val latestInvalidNotice by vm.latestInvalidNoticeFlow.collectAsState()
 
                 var isCelebrating by remember { mutableStateOf(false) }
                 LaunchedEffect(celebrationTs) {
@@ -110,65 +137,104 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val buddyVisualState = when {
-                    isRecordingVoice -> BuddyVisualState.LISTENING
-                    isCelebrating -> BuddyVisualState.CELEBRATING
-                    activeQueueCount > 0 -> BuddyVisualState.THINKING
-                    board.hasUrgentDueOrOverdueP1(LocalDate.now().toString()) -> BuddyVisualState.IDLE_STRESSED_P1
-                    else -> BuddyVisualState.IDLE_CHILL
+                val idleStates = remember {
+                    listOf(
+                        BuddyVisualState.IDLE_CHILL,
+                        BuddyVisualState.IDLE_CHILL,
+                        BuddyVisualState.IDLE_CURIOUS,
+                        BuddyVisualState.IDLE_CHILL,
+                        BuddyVisualState.IDLE_SLEEPY
+                    )
+                }
+                var idleMoodIndex by remember { mutableIntStateOf(0) }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(20000L)
+                        idleMoodIndex = (idleMoodIndex + 1) % idleStates.size
+                    }
                 }
 
+                val buddyVisualState = when {
+                    isRecordingVoice -> BuddyVisualState.LISTENING
+                    isTypingInApp -> BuddyVisualState.NOTING
+                    isCelebrating -> BuddyVisualState.CELEBRATING
+                    activeQueueCount > 0 -> BuddyVisualState.ORGANIZING
+                    board.hasUrgentDueOrOverdueP1(LocalDate.now().toString()) -> BuddyVisualState.IDLE_STRESSED_P1
+                    else -> idleStates[idleMoodIndex]
+                }
+
+                val imeVisible = WindowInsets.isImeVisible
+
                 Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
                     bottomBar = {
-                        NavigationBar {
-                            NavigationBarItem(
-                                selected = currentTab == 0,
-                                onClick = { currentTab = 0 },
-                                icon = { Icon(Icons.Default.Dashboard, contentDescription = null) },
-                                label = { Text("Seções") }
-                            )
-                            NavigationBarItem(
-                                selected = currentTab == 1,
-                                onClick = { currentTab = 1 },
-                                icon = {
-                                    BadgedBox(
-                                        badge = {
-                                            if (activeQueueCount > 0) {
-                                                Badge { Text(activeQueueCount.toString()) }
+                        if (!imeVisible) {
+                            androidx.compose.foundation.layout.Column {
+                                HorizontalDivider(thickness = 1.dp, color = VabPalette.CardBorder)
+                                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                                    NavigationBarItem(
+                                        selected = currentTab == 0,
+                                        onClick = { currentTab = 0 },
+                                        icon = { Icon(Icons.Default.Dashboard, contentDescription = null) },
+                                        label = { Text("Fichário") }
+                                    )
+                                    NavigationBarItem(
+                                        selected = currentTab == 1,
+                                        onClick = { currentTab = 1 },
+                                        icon = {
+                                            BadgedBox(
+                                                badge = {
+                                                    if (activeQueueCount > 0) {
+                                                        Badge { Text(activeQueueCount.toString()) }
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null)
                                             }
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.QueueMusic, contentDescription = null)
-                                    }
-                                },
-                                label = { Text("Fila & Undo") }
-                            )
-                            NavigationBarItem(
-                                selected = currentTab == 2,
-                                onClick = {
-                                    vm.refreshModels()
-                                    currentTab = 2
-                                },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                                label = { Text("Buddy & Config") }
-                            )
+                                        },
+                                        label = { Text("Bastidores") }
+                                    )
+                                    NavigationBarItem(
+                                        selected = currentTab == 2,
+                                        onClick = {
+                                            vm.refreshModels()
+                                            currentTab = 2
+                                        },
+                                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                        label = { Text("Buddy") }
+                                    )
+                                }
+                            }
                         }
                     }
                 ) { innerPadding ->
-                    Box(modifier = Modifier.padding(innerPadding)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
                         when (currentTab) {
                             0 -> BoardScreen(
-                                buddyDna = vm.buddyDna,
+                                buddyDna = buddyDna,
                                 buddyVisualState = buddyVisualState,
                                 audioAmplitude = voiceAmplitude,
                                 isRecordingVoice = isRecordingVoice,
+                                isTypingInApp = isTypingInApp,
                                 activeQueueCount = activeQueueCount,
                                 board = board,
                                 rawMarkdown = rawMd,
+                                queueItems = queueItems,
+                                latestInvalidNotice = latestInvalidNotice,
+                                onDismissInvalidNotice = vm::dismissInvalidNotice,
+                                onOpenQueueTab = { currentTab = 1 },
                                 onToggleTicket = vm::toggleTicket,
                                 onDeleteTicket = vm::deleteTicket,
+                                onUpdateTicketSchedule = vm::updateTicketSchedule,
+                                onAddSectionTab = vm::addSectionTab,
+                                onRemoveSectionTab = vm::removeSectionTab,
                                 onSetRawEditorLocked = vm::setRawEditorLocked,
                                 onSaveRawMarkdown = vm::saveRawMarkdownAndUnlock,
+                                onTypingChanged = vm::setTypingInApp,
                                 onEnqueueQuickText = vm::enqueueQuickText,
                                 onToggleVoiceRecord = {
                                     if (!hasMicPerm) {
@@ -187,7 +253,7 @@ class MainActivity : ComponentActivity() {
                                 onForceReleaseRam = vm::forceReleaseRam
                             )
                             2 -> SettingsScreen(
-                                buddyDna = vm.buddyDna,
+                                buddyDna = buddyDna,
                                 settings = settings,
                                 modelStatus = modelStatus,
                                 importingModel = importingModel,
@@ -195,13 +261,20 @@ class MainActivity : ComponentActivity() {
                                 onRequestMicPermission = {
                                     permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                                 },
+                                onRandomizeBuddy = vm::randomizeBuddy,
+                                onResetDefaultBuddy = vm::resetDefaultBuddy,
+                                onPinBuddyIcon = {
+                                    AppIconManager.pinExactBuddyShortcut(context, buddyDna)
+                                },
                                 onToggleFloatingBubble = vm::setFloatingBubbleEnabled,
                                 onUpdateSections = vm::updateSections,
                                 onUpdatePersonalContext = vm::updatePersonalContext,
                                 onBindExternalFolder = vm::bindExternalSafFolder,
                                 onUnlinkExternalFolder = vm::unlinkExternalSafFolder,
                                 onImportCustomGguf = vm::importCustomGgufModel,
-                                onResetDefaultGguf = vm::resetToDefaultSlmModel
+                                onResetDefaultGguf = vm::resetToDefaultSlmModel,
+                                onImportCustomWhisper = vm::importCustomWhisperModel,
+                                onResetDefaultWhisper = vm::resetToDefaultWhisperModel
                             )
                         }
                     }

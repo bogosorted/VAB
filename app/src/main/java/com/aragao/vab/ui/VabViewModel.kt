@@ -30,7 +30,7 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as VabApplication
     private val inAppRecorder = WavAudioRecorder(application.applicationContext)
 
-    val buddyDna: BuddyDna = app.buddyDna
+    val buddyDnaFlow: StateFlow<BuddyDna> = app.buddyDnaFlow
 
     val boardFlow: StateFlow<MarkdownBoard> = app.boardRepository.board
     val rawMarkdownFlow: StateFlow<String> = app.boardRepository.rawMarkdown
@@ -43,6 +43,10 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val celebrationTimestampFlow: StateFlow<Long> = app.queueOrchestrator.lastCelebrationTimestamp
+    val latestInvalidNoticeFlow = app.queueOrchestrator.latestInvalidNotice
+
+    private val _isTypingInApp = MutableStateFlow(false)
+    val isTypingInApp: StateFlow<Boolean> = _isTypingInApp.asStateFlow()
 
     val settingsFlow: StateFlow<VabSettings> = app.settingsRepository.settingsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), VabSettings())
@@ -58,10 +62,26 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             val s = app.settingsRepository.getSnapshot()
+            app.updateBuddySeed(s.customBuddySeed)
             app.modelManager.refreshDetectedModels(s.customWhisperModelPath, s.customSlmModelPath)
             if (s.floatingBubbleEnabled && Settings.canDrawOverlays(app)) {
                 FloatingBubbleService.start(app)
             }
+        }
+    }
+
+    fun randomizeBuddy() {
+        viewModelScope.launch {
+            val newSeed = kotlin.random.Random.nextLong()
+            app.settingsRepository.setCustomBuddySeed(newSeed)
+            app.updateBuddySeed(newSeed)
+        }
+    }
+
+    fun resetDefaultBuddy() {
+        viewModelScope.launch {
+            app.settingsRepository.setCustomBuddySeed(null)
+            app.updateBuddySeed(null)
         }
     }
 
@@ -84,6 +104,12 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateTicketSchedule(ticketId: String, deadline: String?, time: String?, reminderHours: Int) {
+        viewModelScope.launch {
+            app.boardRepository.updateTicketSchedule(ticketId, deadline, time, reminderHours)
+        }
+    }
+
     fun setRawEditorLocked(locked: Boolean) {
         app.boardRepository.setRawEditorLocked(locked)
     }
@@ -96,7 +122,16 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun enqueueQuickText(text: String) {
+        _isTypingInApp.value = false
         app.queueOrchestrator.enqueueText(text)
+    }
+
+    fun setTypingInApp(typing: Boolean) {
+        _isTypingInApp.value = typing
+    }
+
+    fun dismissInvalidNotice() {
+        app.queueOrchestrator.dismissInvalidNotice()
     }
 
     fun toggleInAppVoiceRecording(): Boolean {
@@ -135,6 +170,32 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             app.settingsRepository.updateSections(sections)
             app.boardRepository.syncConfiguredSectionsToBoard(sections)
+        }
+    }
+
+    fun addSectionTab(name: String, description: String) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
+        viewModelScope.launch {
+            val current = app.settingsRepository.getSnapshot().sections
+            if (current.any { it.name.equals(cleanName, ignoreCase = true) }) return@launch
+            val updated = current + SectionRuleConfig(
+                name = cleanName,
+                description = description.trim().ifEmpty { "Assuntos e tarefas de $cleanName" }
+            )
+            app.settingsRepository.updateSections(updated)
+            app.boardRepository.syncConfiguredSectionsToBoard(updated)
+        }
+    }
+
+    fun removeSectionTab(name: String) {
+        viewModelScope.launch {
+            val current = app.settingsRepository.getSnapshot().sections
+            if (current.size <= 1) return@launch
+            val updated = current.filterNot { it.name.equals(name.trim(), ignoreCase = true) }
+                .ifEmpty { VabSettings.defaultSections() }
+            app.settingsRepository.updateSections(updated)
+            app.boardRepository.syncConfiguredSectionsToBoard(updated)
         }
     }
 
@@ -207,6 +268,39 @@ class VabViewModel(application: Application) : AndroidViewModel(application) {
             app.modelManager.forceReleaseAllRam()
             val s = app.settingsRepository.getSnapshot()
             app.modelManager.refreshDetectedModels(s.customWhisperModelPath, null)
+        }
+    }
+
+    fun importCustomWhisperModel(uri: Uri) {
+        viewModelScope.launch {
+            _importingModel.value = true
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val destDir = File(app.filesDir, "models").apply { mkdirs() }
+                    val destFile = File(destDir, "custom-whisper.bin")
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        destFile.outputStream().use { out ->
+                            input.copyTo(out, bufferSize = 256 * 1024)
+                        }
+                    }
+                    if (destFile.exists() && destFile.length() > 0L) {
+                        app.settingsRepository.setCustomWhisperModelPath(destFile.absolutePath)
+                        app.modelManager.forceReleaseAllRam()
+                        val s = app.settingsRepository.getSnapshot()
+                        app.modelManager.refreshDetectedModels(s.customWhisperModelPath, s.customSlmModelPath)
+                    }
+                }
+            }
+            _importingModel.value = false
+        }
+    }
+
+    fun resetToDefaultWhisperModel() {
+        viewModelScope.launch {
+            app.settingsRepository.setCustomWhisperModelPath(null)
+            app.modelManager.forceReleaseAllRam()
+            val s = app.settingsRepository.getSnapshot()
+            app.modelManager.refreshDetectedModels(null, s.customSlmModelPath)
         }
     }
 }

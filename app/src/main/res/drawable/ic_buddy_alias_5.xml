@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="20"
+    android:viewportHeight="20">
+    <path android:fillColor="#FFF7F5F0" android:pathData="M0,0h20v20h-20z" />
+    <!-- Touca beanie pêssego pastel -->
+    <path android:fillColor="#FF6B5048" android:pathData="M7,2h6v2h2v2h1v7h-1v2h-1v2h-2v-1h-4v1h-2v-2h-1v-2h-1v-7h1v-2h2z" />
+    <path android:fillColor="#FFE89E84" android:pathData="M8,3h4v1h2v2h-8v-2h2z" />
+    <path android:fillColor="#FFFAD4C0" android:pathData="M5,6h10v6h-1v2h-8v-2h-1z" />
+    <path android:fillColor="#FFB8E0D4" android:pathData="M6,11h8v3h-8z" />
+    <path android:fillColor="#FF2B2930" android:pathData="M6,8h2v2h-2zM12,8h2v2h-2zM9,10h2v1h-2z" />
+</vector>

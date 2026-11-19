@@ -179,10 +179,11 @@ O desenvolvimento do **VAB** segue **STDD (Specification & Test-Driven Developme
 | ID da Spec | Domínio | Contrato Verificado em `VabCoreTest.kt` |
 | :--- | :--- | :--- |
 | **`SPEC-01`** | **Markdown Vivo (`MarkdownParser`)** | *Lossless round-trip* entre `vab_board.md` e `MarkdownBoard`, preservando seções `##`, prioridades `**[P1..P3]**`, datas `📅 YYYY-MM-DD`, notas `>`, comentários `<!-- id -->` e linhas livres do usuário. |
-| **`SPEC-02`** | **Motor de Decisões (`BoardPatchEngine`)** | Operações `create`, `update` e `complete`, sanitização de datas inválidas, fallback seguro de seções, ordenação determinística (`P1` → `P2` → `P3` → Prazo) e gatilho de estresse `P1`. |
-| **`SPEC-03`** | **Constrained Decoding (`GbnfGrammarBuilder`)** | Geração dinâmica da gramática GBNF garantindo `enums` estritos das seções configuradas e bloqueio estrutural de `update`/`complete` quando não há tickets abertos. |
-| **`SPEC-04`** | **Contexto Temporal (`PromptBuilder`)** | Injeção do calendário relativo de 7 dias em PT-BR e índice compacto apenas de tickets abertos (excluindo itens concluídos para economizar contexto do SLM). |
-| **`SPEC-05`** | **Tamagotchi Procedural (`BuddyGenerator`)** | Determinismo bit a bit do `SplitMix64` via `ANDROID_ID`, unicidade entre dispositivos, simetria horizontal `16x16`, contorno automático `1px` e reatividade de frames por estado/voz/estresse `P1`. |
+| **`SPEC-02`** | **Motor de Decisões (`BoardPatchEngine`)** | Operações `create`, `update` e `complete`, bloqueio total quando `status = "INVALIDO"`, sanitização de datas inválidas, fallback de seções e ordenação (`P1` → `P2` → `P3` → Prazo). |
+| **`SPEC-03`** | **Constrained Decoding (`GbnfGrammarBuilder`)** | Geração dinâmica da gramática GBNF com `"reasoning"` antes da decisão, gate `"VALIDO"`/`"INVALIDO"` (travando `operations: []` se inválido), `enums` estritos de seções e IDs abertos reais. |
+| **`SPEC-04`** | **Contexto Temporal (`PromptBuilder`)** | Injeção do calendário relativo de 7 dias em PT-BR, instruções Chain-of-Thought de validação (`VALIDO`/`INVALIDO`) com exemplos few-shot e índice compacto apenas de tickets abertos. |
+| **`SPEC-05`** | **Tamagotchi Procedural (`BuddyGenerator`)** | Determinismo bit a bit do `SplitMix64` via `ANDROID_ID`, simetria em `IDLE_CHILL`, caderno + lápis animado (`NOTING`/`LISTENING`), papéis organizando (`ORGANIZING`) e múltiplos estados idle. |
+| **`SPEC-06`** | **Pré-processamento Whisper (`AudioPreProcessor`)** | Remoção de DC offset, descarte de silêncio puro, recorte de bordas com margem e normalização suave de ganho antes do `whisper.cpp` (Beam Search + prompt PT-BR). |
 
 ### Fluxo STDD para Novas Features
 1. **Definir/Atualizar a Especificação (`SPEC-XX`)** no documento de arquitetura e criar o teste correspondente em `app/src/test/java/com/aragao/vab/VabCoreTest.kt`.
@@ -209,7 +210,7 @@ Se precisar provisionar o OpenJDK 17, Android SDK 35, NDK 27 e CMake em uma máq
 ```
 
 ### 5.2. Baixar e Verificar os Modelos Padrão (`SHA-256`)
-O script abaixo baixa os pesos oficiais (`Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` e `ggml-base-q5_1.bin`) do HuggingFace e valida seus hashes `SHA-256`:
+O script abaixo baixa os pesos oficiais (`Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` e `ggml-small-q5_1.bin` para PT-BR; opcional `--qwen-1.5b`) do HuggingFace e valida seus hashes `SHA-256`:
 
 ```bash
 ./scripts/download_models.sh

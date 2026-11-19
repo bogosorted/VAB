@@ -12,6 +12,8 @@
     <application
         android:name=".VabApplication"
         android:allowBackup="true"
+        android:icon="@drawable/ic_buddy_alias_0"
+        android:roundIcon="@drawable/ic_buddy_alias_0"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:largeHeap="true"
@@ -23,9 +25,149 @@
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 10 Activity-Aliases para o ícone do App trocar conforme o seu Buddy 16x16 -->
+        <activity-alias
+            android:name=".BuddyIconAlias0"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_0"
+            android:roundIcon="@drawable/ic_buddy_alias_0"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias1"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_1"
+            android:roundIcon="@drawable/ic_buddy_alias_1"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias2"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_2"
+            android:roundIcon="@drawable/ic_buddy_alias_2"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias3"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_3"
+            android:roundIcon="@drawable/ic_buddy_alias_3"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias4"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_4"
+            android:roundIcon="@drawable/ic_buddy_alias_4"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias5"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_5"
+            android:roundIcon="@drawable/ic_buddy_alias_5"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias6"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_6"
+            android:roundIcon="@drawable/ic_buddy_alias_6"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias7"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_7"
+            android:roundIcon="@drawable/ic_buddy_alias_7"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias8"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_8"
+            android:roundIcon="@drawable/ic_buddy_alias_8"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".BuddyIconAlias9"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_buddy_alias_9"
+            android:roundIcon="@drawable/ic_buddy_alias_9"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".overlay.FloatingBubbleService"

@@ -5,16 +5,20 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,26 +36,32 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aragao.vab.core.ai.ModelRuntimeStatus
 import com.aragao.vab.core.buddy.BuddyDna
 import com.aragao.vab.core.buddy.BuddyVisualState
 import com.aragao.vab.core.markdown.SectionRuleConfig
 import com.aragao.vab.data.settings.VabSettings
 import com.aragao.vab.ui.components.BuddyPixelCanvas
+import com.aragao.vab.ui.theme.VabPalette
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     buddyDna: BuddyDna,
@@ -60,15 +70,41 @@ fun SettingsScreen(
     importingModel: Boolean,
     hasMicPermission: Boolean,
     onRequestMicPermission: () -> Unit,
+    onRandomizeBuddy: () -> Unit,
+    onResetDefaultBuddy: () -> Unit,
+    onPinBuddyIcon: () -> Unit,
     onToggleFloatingBubble: (Boolean) -> Unit,
     onUpdateSections: (List<SectionRuleConfig>) -> Unit,
     onUpdatePersonalContext: (String) -> Unit,
     onBindExternalFolder: (Uri) -> Unit,
     onUnlinkExternalFolder: () -> Unit,
     onImportCustomGguf: (Uri) -> Unit,
-    onResetDefaultGguf: () -> Unit
+    onResetDefaultGguf: () -> Unit,
+    onImportCustomWhisper: (Uri) -> Unit,
+    onResetDefaultWhisper: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var canOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var pendingOverlayAutoActivate by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val nowCanOverlay = Settings.canDrawOverlays(context)
+                canOverlay = nowCanOverlay
+                if (nowCanOverlay && pendingOverlayAutoActivate) {
+                    pendingOverlayAutoActivate = false
+                    onToggleFloatingBubble(true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     var personalCtxDraft by remember(settings.personalContext) { mutableStateOf(settings.personalContext) }
     var newSectionName by remember { mutableStateOf("") }
     var newSectionRule by remember { mutableStateOf("") }
@@ -85,10 +121,17 @@ fun SettingsScreen(
         if (uri != null) onImportCustomGguf(uri)
     }
 
+    val whisperPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) onImportCustomWhisper(uri)
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .imePadding(),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -96,59 +139,100 @@ fun SettingsScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VabPalette.CardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(68.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(6.dp)
+                        Surface(
+                            color = VabPalette.MutedSurface,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder),
+                            modifier = Modifier.size(68.dp)
                         ) {
-                            BuddyPixelCanvas(
-                                dna = buddyDna,
-                                state = BuddyVisualState.IDLE_CHILL,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            Box(modifier = Modifier.padding(6.dp)) {
+                                BuddyPixelCanvas(
+                                    dna = buddyDna,
+                                    state = BuddyVisualState.IDLE_PLAYFUL,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Seu Buddy Único (Tamagotchi 16x16)",
+                                text = "Seu Buddy Único (16x16 Pastel)",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "DNA Imutável: ${buddyDna.code}",
+                                text = "DNA: ${buddyDna.code} • Ícone do app acompanha seu Buddy",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary
+                                color = VabPalette.JiraBlue,
+                                fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Traço: ${buddyDna.headTrait.name} • Olhos: ${buddyDna.eyeStyle.name}",
+                                text = "Cabeça: ${buddyDna.headTrait.name} • Olhos: ${buddyDna.eyeStyle.name} • Roupa: ${buddyDna.outfitStyle.name}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Braços: ${buddyDna.armStyle.name} • Pernas: ${buddyDna.legStyle.name}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    val canOverlay = Settings.canDrawOverlays(context)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onRandomizeBuddy,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder)
+                        ) {
+                            Text("🎲 Sortear outro Buddy")
+                        }
+                        OutlinedButton(
+                            onClick = onPinBuddyIcon,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder)
+                        ) {
+                            Text("📌 Fixar ícone exato")
+                        }
+                        if (settings.customBuddySeed != null) {
+                            OutlinedButton(
+                                onClick = onResetDefaultBuddy,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, VabPalette.CardBorder)
+                            ) {
+                                Text("Original")
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     if (!canOverlay) {
                         Button(
                             onClick = {
+                                pendingOverlayAutoActivate = true
                                 val intent = Intent(
                                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                     Uri.parse("package:${context.packageName}")
                                 )
                                 context.startActivity(intent)
                             },
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("1. Liberar Permissão de Sobreposição (Botão Flutuante)")
+                            Text("1. Liberar Permissão de Sobreposição (Ativa automático)")
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -156,6 +240,8 @@ fun SettingsScreen(
                     if (!hasMicPermission) {
                         OutlinedButton(
                             onClick = onRequestMicPermission,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Liberar Permissão de Microfone")
@@ -169,12 +255,12 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Buddy Flutuante Global",
+                                text = "Buddy Flutuante Stealth",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "1 toque grava voz • Segurar abre texto rápido sobre qualquer app",
+                                text = "Fica 20% recolhido na borda • Toque abre menu • Segure para gravar voz",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -183,6 +269,7 @@ fun SettingsScreen(
                             checked = settings.floatingBubbleEnabled && canOverlay,
                             onCheckedChange = { checked ->
                                 if (checked && !Settings.canDrawOverlays(context)) {
+                                    pendingOverlayAutoActivate = true
                                     val intent = Intent(
                                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                         Uri.parse("package:${context.packageName}")
@@ -202,7 +289,9 @@ fun SettingsScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VabPalette.CardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -231,7 +320,7 @@ fun SettingsScreen(
                                     text = "## ${sec.name}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = VabPalette.JiraBlue
                                 )
                                 Text(
                                     text = sec.description,
@@ -259,13 +348,15 @@ fun SettingsScreen(
                         onValueChange = { newSectionName = it },
                         label = { Text("Nova seção (ex: TCC)") },
                         singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = newSectionRule,
                         onValueChange = { newSectionRule = it },
-                        label = { Text("Regra para a IA (ex: Orientador, escrita e artigos do TCC)") },
+                        label = { Text("Regra para a IA (ex: Orientador, escrita e artigos)") },
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -280,7 +371,9 @@ fun SettingsScreen(
                                 newSectionName = ""
                                 newSectionRule = ""
                             }
-                        }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, VabPalette.CardBorder)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
@@ -294,7 +387,9 @@ fun SettingsScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VabPalette.CardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -309,11 +404,13 @@ fun SettingsScreen(
                         onValueChange = { personalCtxDraft = it },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
+                        shape = RoundedCornerShape(10.dp),
                         label = { Text("Instruções de rotina para calibrar P1 / P2 / P3") }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = { onUpdatePersonalContext(personalCtxDraft) }
+                        onClick = { onUpdatePersonalContext(personalCtxDraft) },
+                        shape = RoundedCornerShape(10.dp)
                     ) {
                         Text("Salvar Contexto")
                     }
@@ -325,7 +422,9 @@ fun SettingsScreen(
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VabPalette.CardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -345,13 +444,21 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { folderPicker.launch(null) }) {
+                        OutlinedButton(
+                            onClick = { folderPicker.launch(null) },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder)
+                        ) {
                             Icon(Icons.Default.FolderOpen, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Escolher Pasta")
                         }
                         if (settings.externalSafTreeUri != null) {
-                            OutlinedButton(onClick = onUnlinkExternalFolder) {
+                            OutlinedButton(
+                                onClick = onUnlinkExternalFolder,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, VabPalette.CardBorder)
+                            ) {
                                 Text("Desvincular")
                             }
                         }
@@ -360,11 +467,13 @@ fun SettingsScreen(
             }
         }
 
-        // 5) Modelos Locais (Qwen padrão embutido vs GGUF customizado)
+        // 5) Modelos Locais (Whisper + Qwen)
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, VabPalette.CardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -383,16 +492,42 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         OutlinedButton(
                             enabled = !importingModel,
-                            onClick = { ggufPicker.launch(arrayOf("*/*")) }
+                            onClick = { ggufPicker.launch(arrayOf("*/*")) },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder)
                         ) {
-                            Text(if (importingModel) "Importando .gguf..." else "Importar outro .gguf")
+                            Text(if (importingModel) "Importando..." else "Importar Qwen (.gguf)")
                         }
                         if (settings.customSlmModelPath != null) {
-                            OutlinedButton(onClick = onResetDefaultGguf) {
-                                Text("Usar Qwen Padrão")
+                            OutlinedButton(
+                                onClick = onResetDefaultGguf,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, VabPalette.CardBorder)
+                            ) {
+                                Text("Qwen Padrão")
+                            }
+                        }
+                        OutlinedButton(
+                            enabled = !importingModel,
+                            onClick = { whisperPicker.launch(arrayOf("*/*")) },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, VabPalette.CardBorder)
+                        ) {
+                            Text("Importar Whisper (.bin)")
+                        }
+                        if (settings.customWhisperModelPath != null) {
+                            OutlinedButton(
+                                onClick = onResetDefaultWhisper,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, VabPalette.CardBorder)
+                            ) {
+                                Text("Whisper Padrão")
                             }
                         }
                     }

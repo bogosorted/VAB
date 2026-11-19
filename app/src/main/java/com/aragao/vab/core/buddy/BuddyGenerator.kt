@@ -3,10 +3,80 @@ package com.aragao.vab.core.buddy
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+enum class HeadTrait {
+    CAT_EARS,
+    BEAR_EARS,
+    BUNNY_EARS,
+    SPROUT,
+    CROWN,
+    BEANIE,
+    HALO,
+    HORNS,
+    ANTENNA,
+    BOW
+}
+
+enum class EyeStyle {
+    DOTS,
+    SPARKLE,
+    HAPPY_ARC,
+    WIDE_CUTE,
+    SLEEPY_CUTE,
+    GLASSES,
+    WINK,
+    STARRY,
+    SHY,
+    COOL_SHADES
+}
+
+enum class ArmStyle {
+    TUCKED,
+    OPEN,
+    WAVE_LEFT,
+    WAVE_RIGHT,
+    HUG,
+    HIPS,
+    UP_CHEER,
+    SHORT_PAWS,
+    LONG_COZY,
+    POCKET
+}
+
+enum class LegStyle {
+    SHORT_FEET,
+    WIDE_STANCE,
+    BOOTS,
+    SITTING,
+    TIPTOE,
+    LITTLE_PAWS,
+    SNEAKERS,
+    WADDLE,
+    CROSS_STEP,
+    BOUNCY
+}
+
+enum class OutfitStyle {
+    NONE,
+    OVERALLS,
+    SCARF,
+    STRIPED_TEE,
+    HOODIE,
+    BOWTIE,
+    APRON,
+    CAPE_TRIM,
+    HEART_SWEATER,
+    VEST
+}
+
 enum class BuddyVisualState {
     IDLE_CHILL,
+    IDLE_CURIOUS,
+    IDLE_PLAYFUL,
+    IDLE_SLEEPY,
     IDLE_STRESSED_P1,
     LISTENING,
+    NOTING,
+    ORGANIZING,
     THINKING,
     CELEBRATING
 }
@@ -18,94 +88,79 @@ data class BuddyDna(
     val highlightColor: Int,
     val shadowColor: Int,
     val outlineColor: Int,
-    val eyeColor: Int,
     val accentColor: Int,
+    val outfitColor: Int,
+    val outfitAccentColor: Int,
+    val eyeColor: Int,
+    val blushColor: Int,
     val headTrait: HeadTrait,
-    val eyeStyle: EyeStyle
-) {
-    enum class HeadTrait { EARS, ANTENNA, HORNS, TUFT, ROUND }
-    enum class EyeStyle { CLASSIC, BIG_KAWAII, VISOR, WIDE }
-}
-
-/**
- * PRNG determinístico de 64 bits (SplitMix64) para garantir que o mesmo ANDROID_ID
- * gere sempre exatamente o mesmo Tamagotchi em qualquer execução.
- */
-internal class SplitMix64(seed: Long) {
-    private var state: Long = if (seed == 0L) -0x61c8864680b583ebL else seed
-
-    fun nextLong(): Long {
-        var z = (state + -0x61c8864680b583ebL).also { state = it }
-        z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
-        z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
-        return z xor (z ushr 31)
-    }
-
-    fun nextInt(bound: Int): Int {
-        require(bound > 0)
-        return ((nextLong() ushr 1) % bound).toInt()
-    }
-
-    fun nextFloat(): Float {
-        return ((nextLong() ushr 40).toDouble() / (1L shl 24).toDouble()).toFloat()
-    }
-}
+    val eyeStyle: EyeStyle,
+    val armStyle: ArmStyle,
+    val legStyle: LegStyle,
+    val outfitStyle: OutfitStyle
+)
 
 object BuddyGenerator {
     const val GRID_SIZE = 16
+    private const val TRANSPARENT = 0x00000000
 
-    fun seedFromDeviceId(deviceId: String): Long {
-        val normalized = deviceId.trim().ifEmpty { "vab-default-device" }
-        var hash = -0x340d631b7bdddcdbL // FNV-1a 64-bit offset basis
-        for (ch in normalized) {
-            hash = hash xor ch.code.toLong()
-            hash *= 0x100000001b3L
-        }
-        return hash
+    fun generateDna(deviceSeedString: String): BuddyDna {
+        val seed = fnv1a64(deviceSeedString)
+        return generateDnaFromSeed(seed)
     }
-
-    fun formatDnaCode(seed: Long): String {
-        val upper = ((seed ushr 32) and 0xFFFFL).toString(16).uppercase().padStart(4, '0')
-        val lower = (seed and 0xFFFFL).toString(16).uppercase().padStart(4, '0')
-        return "VAB-$upper-$lower"
-    }
-
-    fun generateDna(deviceId: String): BuddyDna = generateDnaFromSeed(seedFromDeviceId(deviceId))
 
     fun generateDnaFromSeed(seed: Long): BuddyDna {
-        val rng = SplitMix64(seed)
-        val hue = rng.nextFloat() * 360f
-        val sat = 0.62f + rng.nextFloat() * 0.28f
-        val light = 0.54f + rng.nextFloat() * 0.14f
+        val hue = positiveMod(seed, 360).toFloat()
+        val outfitHue = (hue + 115f + positiveMod(seed ushr 5, 110).toFloat()) % 360f
+        val accentHue = (hue + 45f + positiveMod(seed ushr 10, 70).toFloat()) % 360f
 
-        val primary = hslToArgb(hue, sat, light)
-        val highlight = hslToArgb((hue + 10f) % 360f, (sat * 0.9f).coerceAtMost(1f), (light + 0.18f).coerceAtMost(0.88f))
-        val shadow = hslToArgb((hue + 350f) % 360f, sat, (light - 0.17f).coerceAtLeast(0.24f))
-        val outline = hslToArgb(hue, (sat * 0.65f).coerceAtMost(1f), 0.13f)
-        val accentHue = (hue + 145f + rng.nextFloat() * 70f) % 360f
-        val accent = hslToArgb(accentHue, 0.85f, 0.62f)
-        val eyeColor = 0xFF141820.toInt()
+        // Paleta pastel suave e aconchegante (saturação moderada, luminosidade alta)
+        val primary = hslToArgb(hue, 0.50f, 0.80f)
+        val highlight = hslToArgb(hue, 0.54f, 0.89f)
+        val shadow = hslToArgb(hue, 0.44f, 0.69f)
+        val outline = hslToArgb(hue, 0.34f, 0.30f)
+        val accent = hslToArgb(accentHue, 0.56f, 0.78f)
+        val outfit = hslToArgb(outfitHue, 0.48f, 0.72f)
+        val outfitAccent = hslToArgb(outfitHue, 0.52f, 0.84f)
+        val blush = hslToArgb(350f, 0.68f, 0.80f)
 
-        val headTraits = BuddyDna.HeadTrait.entries
-        val eyeStyles = BuddyDna.EyeStyle.entries
+        val headTraits = HeadTrait.entries
+        val eyeStyles = EyeStyle.entries
+        val armStyles = ArmStyle.entries
+        val legStyles = LegStyle.entries
+        val outfitStyles = OutfitStyle.entries
+
+        val headTrait = headTraits[positiveMod(seed ushr 14, headTraits.size)]
+        val eyeStyle = eyeStyles[positiveMod(seed ushr 20, eyeStyles.size)]
+        val armStyle = armStyles[positiveMod(seed ushr 26, armStyles.size)]
+        val legStyle = legStyles[positiveMod(seed ushr 32, legStyles.size)]
+        val outfitStyle = outfitStyles[positiveMod(seed ushr 38, outfitStyles.size)]
+
+        val shortCode = "VAB-" + abs(seed.toInt()).toString(16).uppercase().padStart(4, '0').take(4)
 
         return BuddyDna(
             seed = seed,
-            code = formatDnaCode(seed),
+            code = shortCode,
             primaryColor = primary,
             highlightColor = highlight,
             shadowColor = shadow,
             outlineColor = outline,
-            eyeColor = eyeColor,
             accentColor = accent,
-            headTrait = headTraits[rng.nextInt(headTraits.size)],
-            eyeStyle = eyeStyles[rng.nextInt(eyeStyles.size)]
+            outfitColor = outfit,
+            outfitAccentColor = outfitAccent,
+            eyeColor = 0xFF2B2930.toInt(),
+            blushColor = blush,
+            headTrait = headTrait,
+            eyeStyle = eyeStyle,
+            armStyle = armStyle,
+            legStyle = legStyle,
+            outfitStyle = outfitStyle
         )
     }
 
     /**
-     * Renderiza um frame 16x16 ARGB (256 ints) simétrico com contorno automático de 1px
-     * e animações procedurais para os estados do botão flutuante.
+     * Renderiza o sprite 16x16 (IntArray de 256 pixels ARGB) combinando as 10 predefinições
+     * de cabeça, olhos, roupinha, braços e pernas em tons pastéis suaves.
      */
     fun renderFrame(
         dna: BuddyDna,
@@ -113,289 +168,496 @@ object BuddyGenerator {
         tick: Int,
         audioAmplitude: Float = 0f
     ): IntArray {
-        val rng = SplitMix64(dna.seed xor 0x5A5A5A5AL)
+        val pixels = IntArray(GRID_SIZE * GRID_SIZE) { TRANSPARENT }
         val bodyMask = Array(GRID_SIZE) { BooleanArray(GRID_SIZE) }
-        val accentMask = Array(GRID_SIZE) { BooleanArray(GRID_SIZE) }
 
-        // Deslocamento vertical de animação (respiração ou pulinho)
-        val yShift = when (state) {
+        val bounceY = when (state) {
             BuddyVisualState.CELEBRATING -> if (tick % 2 == 0) -1 else 0
-            BuddyVisualState.LISTENING -> if (audioAmplitude > 0.25f && tick % 2 == 0) -1 else 0
-            else -> if (tick % 6 >= 3) 1 else 0
+            BuddyVisualState.ORGANIZING -> if (tick % 3 == 0) -1 else 0
+            else -> 0
         }
-
-        fun setSymBody(hx: Int, y: Int, value: Boolean = true) {
-            val sy = y + yShift
-            if (hx in 0..7 && sy in 1..(GRID_SIZE - 2)) {
-                bodyMask[sy][hx] = value
-                bodyMask[sy][GRID_SIZE - 1 - hx] = value
-            }
-        }
-
-        fun setSymAccent(hx: Int, y: Int) {
-            val sy = y + yShift
-            if (hx in 0..7 && sy in 1..(GRID_SIZE - 2)) {
-                accentMask[sy][hx] = true
-                accentMask[sy][GRID_SIZE - 1 - hx] = true
-            }
-        }
-
-        // Núcleo garantido do Tamagotchi (sempre conectado e fofo)
-        for (y in 5..12) {
-            for (hx in 4..7) {
-                setSymBody(hx, y, true)
-            }
-        }
-
-        // Bochechas / largura lateral procedural por linha
-        for (y in 5..12) {
-            val edgeChance = if (y in 7..11) 0.78f else 0.42f
-            if (rng.nextFloat() < edgeChance) {
-                setSymBody(3, y, true)
-                if (y in 8..10 && rng.nextFloat() < 0.45f) {
-                    setSymBody(2, y, true)
-                }
-            }
-        }
-
-        // Topo da cabeça arredondado
-        for (hx in 5..7) setSymBody(hx, 4, true)
-        if (rng.nextFloat() < 0.65f) setSymBody(4, 4, true)
-
-        // Traço procedural do topo da cabeça
-        when (dna.headTrait) {
-            BuddyDna.HeadTrait.EARS -> {
-                setSymBody(3, 3, true)
-                setSymBody(4, 3, true)
-                setSymBody(3, 2, true)
-                setSymAccent(3, 3)
-            }
-            BuddyDna.HeadTrait.ANTENNA -> {
-                val sy2 = (2 + yShift).coerceIn(1, 14)
-                val sy3 = (3 + yShift).coerceIn(1, 14)
-                bodyMask[sy3][7] = true
-                bodyMask[sy3][8] = true
-                accentMask[sy2][7] = true
-                accentMask[sy2][8] = true
-                bodyMask[sy2][7] = true
-                bodyMask[sy2][8] = true
-            }
-            BuddyDna.HeadTrait.HORNS -> {
-                setSymBody(4, 3, true)
-                setSymBody(3, 2, true)
-                setSymAccent(3, 2)
-            }
-            BuddyDna.HeadTrait.TUFT -> {
-                setSymBody(6, 3, true)
-                setSymBody(7, 3, true)
-                setSymAccent(7, 2)
-                setSymBody(7, 2, true)
-            }
-            BuddyDna.HeadTrait.ROUND -> {
-                setSymBody(5, 3, true)
-                setSymBody(6, 3, true)
-                setSymBody(7, 3, true)
-            }
-        }
-
-        // Pezinhos procedurais na base
-        val footX = if (rng.nextFloat() < 0.5f) 4 else 5
-        setSymBody(footX, 13, true)
-        setSymBody(footX + 1, 13, true)
-
-        // Garante conectividade via flood-fill a partir do centro
-        val connected = keepConnectedToCenter(bodyMask, 7, (8 + yShift).coerceIn(1, 14))
-
-        val pixels = IntArray(GRID_SIZE * GRID_SIZE) { 0x00000000 }
-
-        // 1) Preenche corpo com sombreamento top-down + detalhes de destaque
-        var minBodyY = GRID_SIZE
-        var maxBodyY = 0
-        for (y in 0 until GRID_SIZE) {
-            for (x in 0 until GRID_SIZE) {
-                if (connected[y][x]) {
-                    if (y < minBodyY) minBodyY = y
-                    if (y > maxBodyY) maxBodyY = y
-                }
-            }
-        }
-
-        for (y in 0 until GRID_SIZE) {
-            for (x in 0 until GRID_SIZE) {
-                if (connected[y][x]) {
-                    val color = when {
-                        accentMask[y][x] -> dna.accentColor
-                        y <= minBodyY + 1 -> dna.highlightColor
-                        y >= maxBodyY - 1 -> dna.shadowColor
-                        else -> dna.primaryColor
-                    }
-                    pixels[y * GRID_SIZE + x] = color
-                }
-            }
-        }
-
-        // 2) Contorno automático escuro de 1px ao redor da silhueta (contraste Tamagotchi)
-        val dirs = arrayOf(intArrayOf(-1, 0), intArrayOf(1, 0), intArrayOf(0, -1), intArrayOf(0, 1))
-        for (y in 0 until GRID_SIZE) {
-            for (x in 0 until GRID_SIZE) {
-                if (!connected[y][x]) {
-                    val touchesBody = dirs.any { d ->
-                        val ny = y + d[1]
-                        val nx = x + d[0]
-                        ny in 0 until GRID_SIZE && nx in 0 until GRID_SIZE && connected[ny][nx]
-                    }
-                    if (touchesBody) {
-                        pixels[y * GRID_SIZE + x] = dna.outlineColor
-                    }
-                }
-            }
-        }
-
-        // 3) Olhinhos procedurais e expressões
-        val eyeY = (7 + yShift).coerceIn(3, 11)
-        val isBlinking = (state == BuddyVisualState.IDLE_CHILL || state == BuddyVisualState.IDLE_STRESSED_P1) && (tick % 14 == 13)
 
         fun setPx(x: Int, y: Int, color: Int) {
-            if (x in 0 until GRID_SIZE && y in 0 until GRID_SIZE) {
-                pixels[y * GRID_SIZE + x] = color
+            val yy = y + bounceY
+            if (x in 0 until GRID_SIZE && yy in 0 until GRID_SIZE) {
+                pixels[yy * GRID_SIZE + x] = color
             }
         }
 
-        when {
-            state == BuddyVisualState.CELEBRATING -> {
-                // Olhinhos felizes ^ ^
-                setPx(5, eyeY, dna.eyeColor)
-                setPx(6, eyeY - 1, dna.eyeColor)
-                setPx(9, eyeY - 1, dna.eyeColor)
-                setPx(10, eyeY, dna.eyeColor)
+        fun setSymmetric(x: Int, y: Int, color: Int) {
+            setPx(x, y, color)
+            setPx(GRID_SIZE - 1 - x, y, color)
+        }
+
+        fun markBodySymmetric(x: Int, y: Int) {
+            if (x in 0 until GRID_SIZE && y in 0 until GRID_SIZE) {
+                bodyMask[y][x] = true
+                bodyMask[y][GRID_SIZE - 1 - x] = true
             }
-            isBlinking -> {
-                setPx(5, eyeY, dna.eyeColor)
-                setPx(6, eyeY, dna.eyeColor)
-                setPx(9, eyeY, dna.eyeColor)
-                setPx(10, eyeY, dna.eyeColor)
+        }
+
+        // 1) Silhueta fofa arredondada 16x16 (estilo Tamagotchi / Slime rechonchudo)
+        for (x in 5..7) markBodySymmetric(x, 3)
+        for (x in 4..7) markBodySymmetric(x, 4)
+        for (y in 5..10) {
+            for (x in 3..7) markBodySymmetric(x, y)
+        }
+        for (x in 4..7) markBodySymmetric(x, 11)
+        for (x in 5..7) markBodySymmetric(x, 12)
+
+        // 2) Predefinições de Cabeça (10 estilos)
+        when (dna.headTrait) {
+            HeadTrait.CAT_EARS -> {
+                markBodySymmetric(4, 1)
+                markBodySymmetric(4, 2)
+                markBodySymmetric(5, 2)
             }
-            state == BuddyVisualState.THINKING -> {
-                // Olhando para cima + balãozinho "..."
-                setPx(5, eyeY - 1, dna.eyeColor)
-                setPx(10, eyeY - 1, dna.eyeColor)
-                val dotCount = (tick % 3) + 1
-                for (i in 0 until dotCount) {
-                    setPx(10 + i * 2, 1, 0xFFFFFFFF.toInt())
-                    setPx(10 + i * 2, 2, dna.outlineColor)
+            HeadTrait.BEAR_EARS -> {
+                markBodySymmetric(3, 2)
+                markBodySymmetric(4, 2)
+                markBodySymmetric(3, 3)
+                markBodySymmetric(4, 3)
+            }
+            HeadTrait.BUNNY_EARS -> {
+                markBodySymmetric(5, 0)
+                markBodySymmetric(5, 1)
+                markBodySymmetric(5, 2)
+            }
+            HeadTrait.SPROUT -> {
+                markBodySymmetric(7, 1)
+                markBodySymmetric(7, 2)
+            }
+            HeadTrait.CROWN -> {
+                markBodySymmetric(5, 2)
+                markBodySymmetric(7, 2)
+            }
+            HeadTrait.BEANIE -> {
+                markBodySymmetric(6, 2)
+                markBodySymmetric(7, 2)
+            }
+            HeadTrait.HALO -> {
+                // Halo flutua acima sem grudar no contorno
+            }
+            HeadTrait.HORNS -> {
+                markBodySymmetric(3, 1)
+                markBodySymmetric(4, 2)
+            }
+            HeadTrait.ANTENNA -> {
+                markBodySymmetric(7, 1)
+                markBodySymmetric(7, 2)
+            }
+            HeadTrait.BOW -> {
+                markBodySymmetric(5, 2)
+                markBodySymmetric(6, 2)
+            }
+        }
+
+        // 3) Predefinições de Braços (10 estilos)
+        when (dna.armStyle) {
+            ArmStyle.TUCKED -> {
+                // Braços recolhidos junto ao corpo
+            }
+            ArmStyle.OPEN -> {
+                markBodySymmetric(2, 7)
+                markBodySymmetric(2, 8)
+            }
+            ArmStyle.WAVE_LEFT -> {
+                markBodySymmetric(2, 6)
+                markBodySymmetric(2, 7)
+            }
+            ArmStyle.WAVE_RIGHT -> {
+                markBodySymmetric(2, 6)
+                markBodySymmetric(2, 8)
+            }
+            ArmStyle.HUG -> {
+                markBodySymmetric(2, 8)
+            }
+            ArmStyle.HIPS -> {
+                markBodySymmetric(2, 8)
+                markBodySymmetric(2, 9)
+            }
+            ArmStyle.UP_CHEER -> {
+                markBodySymmetric(2, 5)
+                markBodySymmetric(2, 6)
+            }
+            ArmStyle.SHORT_PAWS -> {
+                markBodySymmetric(2, 7)
+            }
+            ArmStyle.LONG_COZY -> {
+                markBodySymmetric(2, 7)
+                markBodySymmetric(2, 8)
+                markBodySymmetric(2, 9)
+            }
+            ArmStyle.POCKET -> {
+                markBodySymmetric(2, 9)
+            }
+        }
+
+        // 4) Predefinições de Pernas (10 estilos)
+        when (dna.legStyle) {
+            LegStyle.SHORT_FEET -> {
+                markBodySymmetric(5, 13)
+                markBodySymmetric(6, 13)
+            }
+            LegStyle.WIDE_STANCE -> {
+                markBodySymmetric(4, 13)
+                markBodySymmetric(5, 13)
+            }
+            LegStyle.BOOTS -> {
+                markBodySymmetric(5, 13)
+                markBodySymmetric(6, 13)
+                markBodySymmetric(5, 14)
+            }
+            LegStyle.SITTING -> {
+                markBodySymmetric(3, 12)
+                markBodySymmetric(4, 13)
+            }
+            LegStyle.TIPTOE -> {
+                markBodySymmetric(5, 13)
+                markBodySymmetric(5, 14)
+            }
+            LegStyle.LITTLE_PAWS -> {
+                markBodySymmetric(6, 13)
+            }
+            LegStyle.SNEAKERS -> {
+                markBodySymmetric(4, 13)
+                markBodySymmetric(5, 13)
+                markBodySymmetric(6, 13)
+            }
+            LegStyle.WADDLE -> {
+                markBodySymmetric(3, 12)
+                markBodySymmetric(4, 12)
+            }
+            LegStyle.CROSS_STEP -> {
+                markBodySymmetric(6, 13)
+                markBodySymmetric(7, 13)
+            }
+            LegStyle.BOUNCY -> {
+                markBodySymmetric(4, 13)
+                markBodySymmetric(5, 14)
+            }
+        }
+
+        // 5) Preenche corpo com sombreamento pastel suave
+        for (y in 0 until GRID_SIZE) {
+            for (x in 0 until GRID_SIZE) {
+                if (bodyMask[y][x]) {
+                    val fill = when {
+                        y <= 4 -> dna.highlightColor
+                        y >= 11 -> dna.shadowColor
+                        x <= 3 || x >= 12 -> dna.shadowColor
+                        else -> dna.primaryColor
+                    }
+                    setPx(x, y, fill)
                 }
+            }
+        }
+
+        // 6) Contorno pastel escuro 1px ao redor da silhueta
+        val dirs = arrayOf(
+            intArrayOf(1, 0),
+            intArrayOf(-1, 0),
+            intArrayOf(0, 1),
+            intArrayOf(0, -1)
+        )
+        for (y in 0 until GRID_SIZE) {
+            for (x in 0 until GRID_SIZE) {
+                if (!bodyMask[y][x]) {
+                    val touchesBody = dirs.any { d ->
+                        val nx = x + d[0]
+                        val ny = y + d[1]
+                        nx in 0 until GRID_SIZE && ny in 0 until GRID_SIZE && bodyMask[ny][nx]
+                    }
+                    if (touchesBody) {
+                        setPx(x, y, dna.outlineColor)
+                    }
+                }
+            }
+        }
+
+        // 7) Detalhes coloridos dos acessórios de cabeça
+        when (dna.headTrait) {
+            HeadTrait.CAT_EARS -> setSymmetric(4, 2, dna.blushColor)
+            HeadTrait.BEAR_EARS -> setSymmetric(4, 3, dna.blushColor)
+            HeadTrait.BUNNY_EARS -> {
+                setSymmetric(5, 1, dna.blushColor)
+                setSymmetric(5, 2, dna.blushColor)
+            }
+            HeadTrait.SPROUT -> {
+                setSymmetric(6, 0, 0xFF88C999.toInt())
+                setSymmetric(7, 1, 0xFF68B37B.toInt())
+            }
+            HeadTrait.CROWN -> {
+                setSymmetric(5, 2, 0xFFF7D47E.toInt())
+                setSymmetric(6, 3, 0xFFF7D47E.toInt())
+                setSymmetric(7, 2, 0xFFF7D47E.toInt())
+            }
+            HeadTrait.BEANIE -> {
+                setSymmetric(6, 2, dna.outfitColor)
+                setSymmetric(7, 2, dna.outfitAccentColor)
+                for (x in 4..7) setSymmetric(x, 3, dna.outfitColor)
+            }
+            HeadTrait.HALO -> {
+                for (x in 5..7) setSymmetric(x, 0, 0xFFF9E08E.toInt())
+            }
+            HeadTrait.HORNS -> {
+                setSymmetric(3, 1, dna.accentColor)
+                setSymmetric(4, 2, dna.accentColor)
+            }
+            HeadTrait.ANTENNA -> {
+                setSymmetric(7, 0, dna.accentColor)
+            }
+            HeadTrait.BOW -> {
+                setSymmetric(5, 2, dna.blushColor)
+                setSymmetric(6, 2, dna.outfitAccentColor)
+                setSymmetric(7, 2, dna.blushColor)
+            }
+        }
+
+        // 8) Predefinições de Roupinha (10 estilos) nas linhas y = 9..12
+        when (dna.outfitStyle) {
+            OutfitStyle.NONE -> {
+                // Barriguinha pastel clara
+                for (x in 6..7) {
+                    setSymmetric(x, 9, dna.highlightColor)
+                    setSymmetric(x, 10, dna.highlightColor)
+                }
+            }
+            OutfitStyle.OVERALLS -> {
+                setSymmetric(5, 9, dna.outfitColor)
+                setSymmetric(5, 10, dna.outfitAccentColor)
+                for (x in 4..7) {
+                    setSymmetric(x, 10, dna.outfitColor)
+                    setSymmetric(x, 11, dna.outfitColor)
+                    if (x >= 5) setSymmetric(x, 12, dna.outfitColor)
+                }
+                setSymmetric(5, 10, dna.outfitAccentColor)
+            }
+            OutfitStyle.SCARF -> {
+                for (x in 4..7) setSymmetric(x, 9, dna.outfitColor)
+                setSymmetric(6, 10, dna.outfitAccentColor)
+                setSymmetric(6, 11, dna.outfitColor)
+            }
+            OutfitStyle.STRIPED_TEE -> {
+                for (x in 3..7) setSymmetric(x, 9, dna.outfitColor)
+                for (x in 3..7) setSymmetric(x, 10, dna.outfitAccentColor)
+                for (x in 4..7) setSymmetric(x, 11, dna.outfitColor)
+            }
+            OutfitStyle.HOODIE -> {
+                for (y in 9..11) {
+                    for (x in 4..7) setSymmetric(x, y, dna.outfitColor)
+                }
+                setSymmetric(6, 9, dna.outfitAccentColor)
+                setSymmetric(7, 11, dna.outfitAccentColor)
+            }
+            OutfitStyle.BOWTIE -> {
+                setSymmetric(6, 9, dna.outfitColor)
+                setSymmetric(7, 9, dna.outfitAccentColor)
+            }
+            OutfitStyle.APRON -> {
+                for (y in 9..11) {
+                    for (x in 5..7) setSymmetric(x, y, dna.outfitAccentColor)
+                }
+                setSymmetric(4, 10, dna.outfitColor)
+            }
+            OutfitStyle.CAPE_TRIM -> {
+                setSymmetric(3, 8, dna.outfitColor)
+                setSymmetric(3, 9, dna.outfitColor)
+                setSymmetric(3, 10, dna.outfitColor)
+                setSymmetric(4, 11, dna.outfitColor)
+                setSymmetric(7, 9, dna.outfitAccentColor)
+            }
+            OutfitStyle.HEART_SWEATER -> {
+                for (y in 9..11) {
+                    for (x in 4..7) setSymmetric(x, y, dna.outfitColor)
+                }
+                setSymmetric(6, 9, dna.blushColor)
+                setSymmetric(7, 10, dna.blushColor)
+            }
+            OutfitStyle.VEST -> {
+                for (y in 9..11) {
+                    setSymmetric(4, y, dna.outfitColor)
+                    setSymmetric(5, y, dna.outfitColor)
+                    setSymmetric(7, y, dna.highlightColor)
+                }
+            }
+        }
+
+        // Detalhe de sapatinho/bota
+        if (dna.legStyle == LegStyle.BOOTS) {
+            setSymmetric(5, 13, dna.outfitColor)
+            setSymmetric(6, 13, dna.outfitColor)
+            setSymmetric(5, 14, dna.outfitColor)
+        } else if (dna.legStyle == LegStyle.SNEAKERS) {
+            setSymmetric(4, 13, dna.outfitAccentColor)
+            setSymmetric(5, 13, dna.outfitColor)
+            setSymmetric(6, 13, dna.outfitColor)
+        }
+
+        // Bochechas fofas pastéis
+        setSymmetric(3, 7, dna.blushColor)
+        setSymmetric(4, 8, dna.blushColor)
+
+        // 9) Olhos (10 predefinições) e expressão facial
+        val isBlinking = state == BuddyVisualState.IDLE_CHILL && (tick % 14 == 13)
+        val eyeColor = dna.eyeColor
+        val white = 0xFFFFFFFF.toInt()
+
+        when {
+            state == BuddyVisualState.IDLE_SLEEPY || isBlinking -> {
+                setSymmetric(4, 7, eyeColor)
+                setSymmetric(5, 7, eyeColor)
+            }
+            state == BuddyVisualState.CELEBRATING -> {
+                setSymmetric(4, 7, eyeColor)
+                setSymmetric(5, 6, eyeColor)
+            }
+            state == BuddyVisualState.IDLE_STRESSED_P1 -> {
+                setSymmetric(4, 6, eyeColor)
+                setSymmetric(5, 7, eyeColor)
+                setSymmetric(5, 8, eyeColor)
+                setPx(12, 5, 0xFF7CC6FE.toInt())
+            }
+            state == BuddyVisualState.IDLE_CURIOUS -> {
+                val shift = if (tick % 4 < 2) 0 else 1
+                setPx(4 + shift, 7, eyeColor)
+                setPx(10 + shift, 7, eyeColor)
+                setPx(4 + shift, 6, white)
+                setPx(10 + shift, 6, white)
             }
             else -> {
                 when (dna.eyeStyle) {
-                    BuddyDna.EyeStyle.BIG_KAWAII -> {
-                        for (dy in 0..1) {
-                            setPx(5, eyeY + dy, dna.eyeColor)
-                            setPx(10, eyeY + dy, dna.eyeColor)
-                        }
-                        setPx(5, eyeY, 0xFFFFFFFF.toInt())
-                        setPx(10, eyeY, 0xFFFFFFFF.toInt())
+                    EyeStyle.DOTS -> {
+                        setSymmetric(5, 7, eyeColor)
                     }
-                    BuddyDna.EyeStyle.VISOR -> {
-                        for (vx in 5..10) {
-                            setPx(vx, eyeY, dna.eyeColor)
-                        }
-                        setPx(6, eyeY, dna.accentColor)
-                        setPx(9, eyeY, dna.accentColor)
+                    EyeStyle.SPARKLE -> {
+                        setSymmetric(4, 6, white)
+                        setSymmetric(5, 6, eyeColor)
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 7, eyeColor)
                     }
-                    BuddyDna.EyeStyle.WIDE -> {
-                        setPx(4, eyeY, dna.eyeColor)
-                        setPx(11, eyeY, dna.eyeColor)
+                    EyeStyle.HAPPY_ARC -> {
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 6, eyeColor)
                     }
-                    BuddyDna.EyeStyle.CLASSIC -> {
-                        setPx(5, eyeY, dna.eyeColor)
-                        setPx(10, eyeY, dna.eyeColor)
+                    EyeStyle.WIDE_CUTE -> {
+                        setSymmetric(4, 6, eyeColor)
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 6, white)
+                        setSymmetric(5, 7, eyeColor)
+                    }
+                    EyeStyle.SLEEPY_CUTE -> {
+                        setSymmetric(4, 6, dna.shadowColor)
+                        setSymmetric(5, 6, dna.shadowColor)
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 7, eyeColor)
+                    }
+                    EyeStyle.GLASSES -> {
+                        for (x in 3..7) setSymmetric(x, 6, dna.accentColor)
+                        setSymmetric(3, 7, dna.accentColor)
+                        setSymmetric(6, 7, dna.accentColor)
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 7, white)
+                    }
+                    EyeStyle.WINK -> {
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 6, eyeColor)
+                        setSymmetric(5, 7, eyeColor)
+                    }
+                    EyeStyle.STARRY -> {
+                        setSymmetric(4, 6, eyeColor)
+                        setSymmetric(5, 6, 0xFFF7D47E.toInt())
+                        setSymmetric(4, 7, 0xFFF7D47E.toInt())
+                        setSymmetric(5, 7, eyeColor)
+                    }
+                    EyeStyle.SHY -> {
+                        setSymmetric(5, 7, eyeColor)
+                        setSymmetric(5, 6, white)
+                    }
+                    EyeStyle.COOL_SHADES -> {
+                        for (x in 3..7) setSymmetric(x, 6, eyeColor)
+                        setSymmetric(4, 7, eyeColor)
+                        setSymmetric(5, 7, eyeColor)
+                        setSymmetric(4, 6, white)
                     }
                 }
             }
         }
 
-        // 4) Boca e indicadores extras de estado (voz / estresse P1)
-        val mouthY = (eyeY + 2).coerceIn(4, 13)
+        // 10) Boca + Estados de Ação
         when (state) {
             BuddyVisualState.LISTENING -> {
-                val openHeight = when {
-                    audioAmplitude > 0.35f -> 2
-                    audioAmplitude > 0.08f -> 1
-                    else -> if (tick % 2 == 0) 1 else 0
+                setSymmetric(7, 8, eyeColor)
+                if (audioAmplitude > 0.14f || tick % 2 == 0) {
+                    setSymmetric(7, 9, 0xFFE88D8D.toInt())
                 }
-                setPx(7, mouthY, dna.eyeColor)
-                setPx(8, mouthY, dna.eyeColor)
-                if (openHeight >= 1) {
-                    setPx(7, mouthY + 1, 0xFFFF5252.toInt())
-                    setPx(8, mouthY + 1, 0xFFFF5252.toInt())
-                }
-                if (openHeight >= 2 && mouthY + 2 < GRID_SIZE - 1) {
-                    setPx(7, mouthY + 2, dna.eyeColor)
-                    setPx(8, mouthY + 2, dna.eyeColor)
-                }
-                // Sinalzinho de gravação ativa no canto superior direito
-                setPx(13, 2, 0xFFFF3B30.toInt())
-                setPx(14, 2, 0xFFFF3B30.toInt())
-                setPx(13, 3, 0xFFFF3B30.toInt())
-                setPx(14, 3, 0xFFFF3B30.toInt())
             }
-            BuddyVisualState.IDLE_STRESSED_P1 -> {
-                // Boquinha tensa + gotinha de suor ciano animada na lateral
-                setPx(7, mouthY, dna.eyeColor)
-                setPx(8, mouthY + (tick % 2), dna.eyeColor)
-                val sweatY = 4 + (tick % 3)
-                setPx(13, sweatY, 0xFF40C4FF.toInt())
-                setPx(13, sweatY + 1, 0xFF00B0FF.toInt())
+            BuddyVisualState.NOTING -> {
+                setSymmetric(7, 8, eyeColor)
+                // Caderninho + lápis no canto inferior direito
+                for (ny in 9..12) {
+                    for (nx in 12..14) {
+                        setPx(nx, ny, 0xFFFFFBF2.toInt())
+                    }
+                }
+                val penX = if (tick % 2 == 0) 11 else 12
+                setPx(penX, 8, 0xFFE69F52.toInt())
+                setPx(penX + 1, 9, eyeColor)
+            }
+            BuddyVisualState.ORGANIZING -> {
+                setSymmetric(7, 8, eyeColor)
+                val sparkleY = if (tick % 2 == 0) 2 else 3
+                setPx(1, sparkleY, 0xFFF7D47E.toInt())
+                setPx(14, 5 - sparkleY, 0xFF8CC4F7.toInt())
             }
             BuddyVisualState.CELEBRATING -> {
-                setPx(6, mouthY, dna.eyeColor)
-                setPx(7, mouthY + 1, dna.eyeColor)
-                setPx(8, mouthY + 1, dna.eyeColor)
-                setPx(9, mouthY, dna.eyeColor)
+                setSymmetric(6, 8, eyeColor)
+                setSymmetric(7, 9, 0xFFE88D8D.toInt())
+                setPx(1, 2, 0xFFF7D47E.toInt())
+                setPx(14, 2, 0xFF88C999.toInt())
+            }
+            BuddyVisualState.IDLE_PLAYFUL -> {
+                setSymmetric(6, 8, eyeColor)
+                setSymmetric(7, 8, eyeColor)
+                if (tick % 2 == 0) {
+                    setPx(13, 3, 0xFFF7D47E.toInt())
+                }
+            }
+            BuddyVisualState.IDLE_SLEEPY -> {
+                setSymmetric(7, 8, eyeColor)
+                val zY = if (tick % 2 == 0) 2 else 1
+                setPx(13, zY, 0xFF9AB8E8.toInt())
+                setPx(14, zY, 0xFF9AB8E8.toInt())
+            }
+            BuddyVisualState.IDLE_STRESSED_P1 -> {
+                setSymmetric(6, 9, eyeColor)
+                setSymmetric(7, 8, eyeColor)
             }
             else -> {
-                // Sorrisinho sutil
-                setPx(7, mouthY, dna.shadowColor)
-                setPx(8, mouthY, dna.shadowColor)
+                // IDLE_CHILL / IDLE_CURIOUS: sorrisinho sereno simétrico
+                setSymmetric(7, 8, eyeColor)
             }
         }
 
         return pixels
     }
 
-    private fun keepConnectedToCenter(
-        grid: Array<BooleanArray>,
-        startX: Int,
-        startY: Int
-    ): Array<BooleanArray> {
-        val visited = Array(GRID_SIZE) { BooleanArray(GRID_SIZE) }
-        if (!grid[startY][startX]) return grid
-
-        val queue = ArrayDeque<Pair<Int, Int>>()
-        queue.add(startX to startY)
-        visited[startY][startX] = true
-
-        val dirs = arrayOf(
-            intArrayOf(-1, 0), intArrayOf(1, 0),
-            intArrayOf(0, -1), intArrayOf(0, 1)
-        )
-        while (queue.isNotEmpty()) {
-            val (cx, cy) = queue.removeFirst()
-            for (d in dirs) {
-                val nx = cx + d[0]
-                val ny = cy + d[1]
-                if (nx in 0 until GRID_SIZE && ny in 0 until GRID_SIZE &&
-                    grid[ny][nx] && !visited[ny][nx]
-                ) {
-                    visited[ny][nx] = true
-                    queue.add(nx to ny)
-                }
-            }
+    private fun fnv1a64(input: String): Long {
+        var hash = -0x340d631b7bdddcdbL
+        val prime = 0x100000001b3L
+        for (ch in input) {
+            hash = hash xor ch.code.toLong()
+            hash *= prime
         }
-        return visited
+        return hash
     }
 
-    private fun hslToArgb(h: Float, s: Float, l: Float): Int {
+    private fun positiveMod(value: Long, mod: Int): Int {
+        val m = value % mod
+        return (if (m < 0) m + mod else m).toInt()
+    }
+
+    internal fun hslToArgb(h: Float, s: Float, l: Float): Int {
         val c = (1f - abs(2f * l - 1f)) * s
         val x = c * (1f - abs((h / 60f) % 2f - 1f))
         val m = l - c / 2f

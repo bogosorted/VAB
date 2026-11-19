@@ -8,6 +8,8 @@ object MarkdownParser {
     private val priorityPrefixRegex = Regex("""^\*\*\[(P[123])]\*\*\s*""")
     private val idCommentRegex = Regex("""<!--\s*id:([a-zA-Z0-9_-]+)\s*-->""")
     private val dueEmojiRegex = Regex("""📅\s*(\d{4}-\d{2}-\d{2})""")
+    private val timeEmojiRegex = Regex("""⏰\s*(\d{2}:\d{2})""")
+    private val reminderEmojiRegex = Regex("""🔔\s*-?(\d+)\s*(m|min|h|d)""")
 
     fun parse(markdown: String, fallbackSectionNames: List<String> = emptyList()): MarkdownBoard {
         val normalized = markdown.replace("\r\n", "\n")
@@ -65,6 +67,29 @@ object MarkdownParser {
                     remainder = remainder.removeRange(dueMatch.range).trim()
                 }
 
+                val timeMatch = timeEmojiRegex.find(remainder)
+                val time = timeMatch?.groupValues?.get(1)
+                if (timeMatch != null) {
+                    remainder = remainder.removeRange(timeMatch.range).trim()
+                }
+
+                val reminderMatch = reminderEmojiRegex.find(remainder)
+                val reminderHours = if (reminderMatch != null) {
+                    val amount = reminderMatch.groupValues[1].toIntOrNull()?.coerceAtLeast(0) ?: 0
+                    val unit = reminderMatch.groupValues[2].lowercase()
+                    when (unit) {
+                        "m", "min" -> amount
+                        "d" -> amount * 1440
+                        "h" -> if (amount in listOf(15, 30)) amount else amount * 60
+                        else -> amount
+                    }
+                } else {
+                    0
+                }
+                if (reminderMatch != null) {
+                    remainder = remainder.removeRange(reminderMatch.range).trim()
+                }
+
                 val prioMatch = priorityPrefixRegex.find(remainder)
                 val priority = Priority.fromString(prioMatch?.groupValues?.get(1))
                 if (prioMatch != null) {
@@ -76,7 +101,9 @@ object MarkdownParser {
                     title = remainder.ifBlank { " Pendência sem título" }.trim(),
                     priority = priority,
                     completed = completed,
-                    deadline = deadline
+                    deadline = deadline,
+                    time = time,
+                    reminderHours = reminderHours
                 )
                 continue
             }
@@ -146,6 +173,18 @@ object MarkdownParser {
                 if (cleanDeadline != null) {
                     sb.append(" 📅 ").append(cleanDeadline)
                 }
+                val cleanTime = ticket.time?.trim()?.takeIf { it.matches(Regex("""([01]\d|2[0-3]):[0-5]\d""")) }
+                if (cleanTime != null) {
+                    sb.append(" ⏰ ").append(cleanTime)
+                }
+                if (ticket.reminderHours > 0) {
+                    val tag = when {
+                        ticket.reminderHours % 1440 == 0 -> "${ticket.reminderHours / 1440}d"
+                        ticket.reminderHours % 60 == 0 -> "${ticket.reminderHours / 60}h"
+                        else -> "${ticket.reminderHours}m"
+                    }
+                    sb.append(" 🔔 -").append(tag)
+                }
                 sb.append(" <!-- id:").append(ticket.id).appendLine(" -->")
 
                 val cleanNotes = ticket.notes.trim()
@@ -193,7 +232,9 @@ object MarkdownParser {
         val title: String,
         val priority: Priority,
         val completed: Boolean,
-        val deadline: String?
+        val deadline: String?,
+        val time: String?,
+        val reminderHours: Int
     ) {
         val noteLines = mutableListOf<String>()
 
@@ -203,6 +244,8 @@ object MarkdownParser {
             priority = priority,
             completed = completed,
             deadline = deadline,
+            time = time,
+            reminderHours = reminderHours,
             notes = noteLines.joinToString("\n")
         )
     }

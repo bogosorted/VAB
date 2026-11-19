@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aragao.vab.core.markdown.SectionRuleConfig
@@ -21,7 +22,8 @@ data class VabSettings(
     val floatingBubbleEnabled: Boolean = false,
     val externalSafTreeUri: String? = null,
     val customSlmModelPath: String? = null,
-    val customWhisperModelPath: String? = null
+    val customWhisperModelPath: String? = null,
+    val customBuddySeed: Long? = null
 ) {
     companion object {
         const val DEFAULT_PERSONAL_CONTEXT =
@@ -29,20 +31,8 @@ data class VabSettings(
 
         fun defaultSections(): List<SectionRuleConfig> = listOf(
             SectionRuleConfig(
-                name = "Urgente",
-                description = "Atividades críticas para hoje, amanhã ou com prazo estourando."
-            ),
-            SectionRuleConfig(
-                name = "Faculdade",
-                description = "Trabalhos, relatórios, provas, listas de exercícios e assuntos acadêmicos."
-            ),
-            SectionRuleConfig(
-                name = "Pessoal",
-                description = "Compras, saúde, casa, compromissos pessoais e rotina do dia a dia."
-            ),
-            SectionRuleConfig(
-                name = "Ideias & Notas",
-                description = "Anotações sintetizadas de contexto, referências ou ideias futuras sem prazo."
+                name = "Geral",
+                description = "Tarefas, prazos, compromissos, estudos e anotações do dia a dia."
             )
         )
     }
@@ -59,6 +49,7 @@ class SettingsRepository(private val context: Context) {
         val SAF_TREE_URI: Preferences.Key<String> = stringPreferencesKey("external_saf_tree_uri")
         val CUSTOM_SLM_PATH: Preferences.Key<String> = stringPreferencesKey("custom_slm_path")
         val CUSTOM_WHISPER_PATH: Preferences.Key<String> = stringPreferencesKey("custom_whisper_path")
+        val CUSTOM_BUDDY_SEED: Preferences.Key<Long> = longPreferencesKey("custom_buddy_seed")
     }
 
     val settingsFlow: Flow<VabSettings> = context.vabDataStore.data.map { prefs ->
@@ -72,7 +63,8 @@ class SettingsRepository(private val context: Context) {
             floatingBubbleEnabled = prefs[Keys.BUBBLE_ENABLED] ?: false,
             externalSafTreeUri = prefs[Keys.SAF_TREE_URI]?.takeIf { it.isNotBlank() },
             customSlmModelPath = prefs[Keys.CUSTOM_SLM_PATH]?.takeIf { it.isNotBlank() },
-            customWhisperModelPath = prefs[Keys.CUSTOM_WHISPER_PATH]?.takeIf { it.isNotBlank() }
+            customWhisperModelPath = prefs[Keys.CUSTOM_WHISPER_PATH]?.takeIf { it.isNotBlank() },
+            customBuddySeed = prefs[Keys.CUSTOM_BUDDY_SEED]
         )
     }
 
@@ -118,6 +110,26 @@ class SettingsRepository(private val context: Context) {
                 prefs.remove(Keys.CUSTOM_SLM_PATH)
             } else {
                 prefs[Keys.CUSTOM_SLM_PATH] = path
+            }
+        }
+    }
+
+    suspend fun setCustomWhisperModelPath(path: String?) {
+        context.vabDataStore.edit { prefs ->
+            if (path.isNullOrBlank()) {
+                prefs.remove(Keys.CUSTOM_WHISPER_PATH)
+            } else {
+                prefs[Keys.CUSTOM_WHISPER_PATH] = path
+            }
+        }
+    }
+
+    suspend fun setCustomBuddySeed(seed: Long?) {
+        context.vabDataStore.edit { prefs ->
+            if (seed == null) {
+                prefs.remove(Keys.CUSTOM_BUDDY_SEED)
+            } else {
+                prefs[Keys.CUSTOM_BUDDY_SEED] = seed
             }
         }
     }

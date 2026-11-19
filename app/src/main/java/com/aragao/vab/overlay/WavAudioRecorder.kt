@@ -50,20 +50,20 @@ class WavAudioRecorder(private val context: Context) {
         if (minBuf <= 0) return null
 
         val bufferSize = maxOf(minBuf * 2, 4096)
-        val recorder = runCatching {
-            AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize
-            )
-        }.getOrNull() ?: return null
-
-        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            recorder.release()
-            return null
-        }
+        val recorder = listOf(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.MIC
+        ).firstNotNullOfOrNull { source ->
+            runCatching {
+                AudioRecord(
+                    source,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    bufferSize
+                ).takeIf { it.state == AudioRecord.STATE_INITIALIZED }
+            }.getOrNull()
+        } ?: return null
 
         val recordingsDir = File(context.filesDir, "recordings").apply { mkdirs() }
         val outFile = File(recordingsDir, "vab_${System.currentTimeMillis()}.wav")
@@ -111,6 +111,8 @@ class WavAudioRecorder(private val context: Context) {
 
     suspend fun stopRecording(): File? {
         if (!_isRecording.value) return null
+        // Aguarda 130ms para drenar a última sílaba do buffer de áudio do hardware
+        kotlinx.coroutines.delay(130L)
         _isRecording.value = false
         _amplitude.value = 0f
 

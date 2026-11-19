@@ -75,9 +75,18 @@ class BoardRepository(
             }
 
             val parsed = MarkdownParser.parse(text, sectionNames)
-            _rawMarkdown.value = text
-            _board.value = parsed
-            parsed
+            val normalizedBoard = alignBoardWithConfiguredSections(parsed, sectionNames)
+            val finalMd = if (normalizedBoard != parsed) {
+                val updated = MarkdownParser.serialize(normalizedBoard)
+                internalBoardFile.writeText(updated)
+                settings.externalSafTreeUri?.let { writeExternalSafFile(it, updated) }
+                updated
+            } else {
+                text
+            }
+            _rawMarkdown.value = finalMd
+            _board.value = normalizedBoard
+            normalizedBoard
         }
     }
 
@@ -127,28 +136,64 @@ class BoardRepository(
         saveBoard(current.copy(sections = updatedSections))
     }
 
+    suspend fun updateTicketSchedule(ticketId: String, deadline: String?, time: String? = null, reminderHours: Int) {
+        val cleanDeadline = deadline?.trim()?.takeIf { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
+        val cleanTime = time?.trim()?.takeIf { it.matches(Regex("""([01]\d|2[0-3]):[0-5]\d""")) }
+        val cleanReminder = if (cleanDeadline == null && cleanTime == null) {
+            0
+        } else if (reminderHours in listOf(0, 15, 30, 60, 120, 1440)) {
+            reminderHours
+        } else {
+            30
+        }
+        val current = _board.value
+        val updatedSections = current.sections.map { sec ->
+            val updatedTickets = sec.tickets.map { t ->
+                if (t.id == ticketId) {
+                    t.copy(
+                        deadline = cleanDeadline,
+                        time = cleanTime,
+                        reminderHours = cleanReminder
+                    )
+                } else {
+                    t
+                }
+            }
+            sec.copy(tickets = MarkdownParser.sortSectionTickets(updatedTickets))
+        }
+        saveBoard(current.copy(sections = updatedSections))
+    }
+
     suspend fun syncConfiguredSectionsToBoard(sections: List<SectionRuleConfig>) {
         val current = _board.value
+        val merged = alignBoardWithConfiguredSections(current, sections.map { it.name })
+        saveBoard(merged)
+    }
+
+    private fun alignBoardWithConfiguredSections(
+        current: MarkdownBoard,
+        configuredNames: List<String>
+    ): MarkdownBoard {
+        val safeNames = configuredNames.ifEmpty { listOf("Geral") }
         val existingByLower = current.sections.associateBy { it.name.lowercase() }
         val merged = mutableListOf<BoardSection>()
 
-        for (cfg in sections) {
-            val found = existingByLower[cfg.name.lowercase()]
+        for (name in safeNames) {
+            val found = existingByLower[name.lowercase()]
             if (found != null) {
-                merged.add(found.copy(name = cfg.name))
+                merged.add(found.copy(name = name))
             } else {
-                merged.add(BoardSection(name = cfg.name))
+                merged.add(BoardSection(name = name))
             }
         }
-        // Mantém seções extras que possuam tickets ou linhas livres para nunca perder dados do usuário
+        // Mantém seções extras somente se tiverem tickets ou linhas livres (remove abas antigas vazias)
         for (sec in current.sections) {
             val alreadyIncluded = merged.any { it.name.equals(sec.name, ignoreCase = true) }
             if (!alreadyIncluded && (sec.tickets.isNotEmpty() || sec.freeformLines.isNotEmpty())) {
                 merged.add(sec)
             }
         }
-
-        saveBoard(current.copy(sections = merged))
+        return current.copy(sections = merged)
     }
 
     private fun readExternalSafFile(treeUriString: String): String? {

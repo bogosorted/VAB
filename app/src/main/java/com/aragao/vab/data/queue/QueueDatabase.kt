@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 object QueueStatus {
@@ -18,6 +20,7 @@ object QueueStatus {
     const val DECIDING = "DECIDING"
     const val WAITING_EDITOR = "WAITING_EDITOR"
     const val APPLIED = "APPLIED"
+    const val INVALID = "INVALID"
     const val UNDONE = "UNDONE"
     const val FAILED = "FAILED"
 }
@@ -39,7 +42,10 @@ data class QueueItemEntity(
     val appliedSummary: String = "",
     val rawDecisionJson: String = "",
     val previousMarkdownSnapshot: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val validationStatus: String = "",
+    val reasoningText: String = "",
+    val invalidReason: String = ""
 )
 
 @Dao
@@ -66,11 +72,11 @@ interface QueueDao {
     @Update
     suspend fun update(item: QueueItemEntity)
 
-    @Query("DELETE FROM queue_items WHERE status IN ('APPLIED', 'UNDONE', 'FAILED')")
+    @Query("DELETE FROM queue_items WHERE status IN ('APPLIED', 'INVALID', 'UNDONE', 'FAILED')")
     suspend fun clearFinishedHistory()
 }
 
-@Database(entities = [QueueItemEntity::class], version = 1, exportSchema = false)
+@Database(entities = [QueueItemEntity::class], version = 2, exportSchema = false)
 abstract class QueueDatabase : RoomDatabase() {
     abstract fun queueDao(): QueueDao
 
@@ -78,13 +84,25 @@ abstract class QueueDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: QueueDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE queue_items ADD COLUMN validationStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE queue_items ADD COLUMN reasoningText TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE queue_items ADD COLUMN invalidReason TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): QueueDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     QueueDatabase::class.java,
                     "vab_queue.db"
-                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .fallbackToDestructiveMigration()
+                    .build()
+                    .also { INSTANCE = it }
             }
         }
     }
