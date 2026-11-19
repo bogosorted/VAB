@@ -1,0 +1,12 @@
+.gradle/
+build/
+**/build/
+**/.cxx/
+local.properties
+.idea/
+*.iml
+*.apk
+*.aab
+third_party/
+app/src/demoBundled/assets/models/*.gguf
+app/src/demoBundled/assets/models/*.bin
